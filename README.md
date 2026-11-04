@@ -11,7 +11,7 @@ A Home Assistant app for shared shopping lists, one for each store. It adds a **
 - Any household member creates, renames, and deletes lists, also without an admin account.
 - An emoji icon from the list's name, a color for each list, and categories that put lists in sections.
 - Lists in any order by drag, and a Favorites section for each person.
-- Each person picks tiles or rows, item order, favorites, text size, and theme.
+- Each person picks tiles or rows, density, item order, favorites, text size, and theme.
 - A self-check reports, as a Home Assistant notification, when an update of Home Assistant breaks something the app uses.
 - Export and import of everything as a JSON file.
 

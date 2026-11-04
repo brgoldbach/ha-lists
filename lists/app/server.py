@@ -64,8 +64,8 @@ COLORS = ["teal", "cyan", "blue", "navy", "indigo", "purple", "magenta", "pink",
 CUSTOM_COLOR = re.compile(r"#[0-9a-f]{6}")
 LOOK_FIELDS = {"color": str, "category": str, "hidden": bool}
 # Each person's view settings. The first choice of each is the default.
-SETTINGS = {"layout": ["tiles", "rows"], "order": ["added", "name"], "favorites": ["show", "hide"],
-            "text": ["normal", "large"], "theme": ["device", "light", "dark"]}
+SETTINGS = {"layout": ["tiles", "rows"], "density": ["comfortable", "compact"], "order": ["added", "name"],
+            "favorites": ["show", "hide"], "text": ["normal", "large"], "theme": ["device", "light", "dark"]}
 DEFAULT_SETTINGS = {name: choices[0] for name, choices in SETTINGS.items()}
 # The to-do list of Home Assistant's Shopping list integration, which Home Assistant sets up at onboarding.
 BUILT_IN_SHOPPING_LIST = "todo.shopping_list"

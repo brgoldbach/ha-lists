@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.0
+
+- A Density setting. Compact makes the lists smaller, with smaller text, in rows and in tiles. A row
+  shows its name on one line, a tile on up to two.
+
 ## 1.0.0
 
 - A **Lists** page in the sidebar, with a colored tile or row for each Home Assistant to-do list.

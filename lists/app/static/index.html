@@ -137,6 +137,32 @@
   .zone { display: grid; place-items: center; min-height: 64px; border: 2px dashed var(--line); border-radius: 18px;
     color: var(--muted); }
 
+  /* The Compact density: smaller lists and text, one line for each list's name. */
+  [data-density="compact"] .group { margin-bottom: 16px; }
+  [data-density="compact"] .group h2 { margin-bottom: 6px; }
+  [data-density="compact"] .rows { gap: 4px; }
+  [data-density="compact"] .row { min-height: 40px; padding: 4px 12px; gap: 10px; border-radius: 12px;
+    font-size: 15px; }
+  [data-density="compact"] .row-icon { width: 28px; height: 28px; border-radius: 8px; font-size: 16px; }
+  [data-density="compact"] .row-icon.letter { font-size: 14px; }
+  [data-density="compact"] .row-count { min-width: 5em; font-size: 13px; }
+  [data-density="compact"] .row-count::after { margin-left: 6px; font-size: 18px; }
+  [data-density="compact"] .row-fav { width: 24px; }
+  [data-density="compact"] .tiles { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+  [data-density="compact"] .tile { min-height: 84px; padding: 10px; border-radius: 16px; }
+  [data-density="compact"] .tile::after { top: -22px; right: -22px; width: 70px; height: 70px; }
+  [data-density="compact"] .tile-icon { font-size: 26px; }
+  [data-density="compact"] .tile-icon.letter { width: 30px; height: 30px; border-radius: 10px; font-size: 16px; }
+  [data-density="compact"] .tile-name { padding-top: 6px; font-size: 14px; }
+  [data-density="compact"] .tile-count { font-size: 12px; }
+  [data-density="compact"] .row-fav .fav, [data-density="compact"] .tile .fav { width: 24px; height: 24px;
+    font-size: 13px; }
+  [data-density="compact"] .tile .fav { top: 8px; right: 8px; }
+  [data-density="compact"] .row-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  /* A tile is narrow, so its name gets two lines before it ends in "…". */
+  [data-density="compact"] .tile-name { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2; line-clamp: 2; }
+
   details { margin-top: 28px; }
   summary { color: var(--muted); cursor: pointer; margin-bottom: 12px; }
   #hidden-group .tile { min-height: 96px; opacity: 0.75; }
@@ -358,6 +384,11 @@
       <label><input type="radio" name="layout" value="tiles"><span>Tiles</span></label>
       <label><input type="radio" name="layout" value="rows"><span>Rows</span></label>
     </div>
+    <span class="label">Density</span>
+    <div class="segmented" role="radiogroup" aria-label="Density">
+      <label><input type="radio" name="density" value="comfortable"><span>Comfortable</span></label>
+      <label><input type="radio" name="density" value="compact"><span>Compact</span></label>
+    </div>
     <span class="label">Item order</span>
     <div class="segmented" role="radiogroup" aria-label="Item order">
       <label><input type="radio" name="order" value="added"><span>As added</span></label>
@@ -432,7 +463,8 @@ let favorites = [];
 let problem = "";
 let items = [];
 // This person's view settings. Same names and choices as SETTINGS in server.py.
-let settings = { layout: "tiles", order: "added", favorites: "show", text: "normal", theme: "device" };
+let settings = { layout: "tiles", density: "comfortable", order: "added", favorites: "show", text: "normal",
+  theme: "device" };
 // The data of the last render, so a poll that finds no change leaves the page alone.
 let shown = "";
 // Writes and drags in progress. A poll meanwhile could undo a change on screen or redraw the dragged
@@ -952,6 +984,7 @@ function insertEmoji(emoji) {
 function applySettings() {
   document.documentElement.dataset.theme = settings.theme;
   document.documentElement.dataset.text = settings.text;
+  document.documentElement.dataset.density = settings.density;
 }
 
 $("new-list").addEventListener("click", () => openLook(null));

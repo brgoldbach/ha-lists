@@ -100,6 +100,7 @@ Tap the settings button at the top right of the Lists page. Each person keeps th
 | Setting | Choices |
 |---|---|
 | Layout | Tiles or rows |
+| Density | Comfortable, or compact: smaller lists and text. A row shows its name on one line, a tile on up to two. |
 | Item order | As added, or A–Z. A–Z changes only this page; Home Assistant keeps the order the items were added. |
 | Favorites section | Show or hide the **★ Favorites** section. When it is hidden, your favorites stay in their own sections. The stars on lists and the star button show either way. |
 | Text size | Normal or large |

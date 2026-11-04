@@ -60,7 +60,8 @@ class OrderAndFavoritesTest(unittest.TestCase):
 
 
 class ValidateSettingsTest(unittest.TestCase):
-    CURRENT = {"layout": "tiles", "order": "added", "favorites": "show", "text": "normal", "theme": "device"}
+    CURRENT = {"layout": "tiles", "density": "comfortable", "order": "added", "favorites": "show", "text": "normal",
+               "theme": "device"}
 
     def test_applies_changes(self):
         self.assertEqual(validate_settings({"layout": "rows", "theme": "dark"}, self.CURRENT),
@@ -347,12 +348,13 @@ class AppTest(unittest.TestCase):
         self.assertEqual(self.call("GET", "/vendor/emoji-picker-element/LICENSE")[0], 404)
 
     def test_keeps_settings_for_each_person(self):
-        defaults = {"layout": "tiles", "order": "added", "favorites": "show", "text": "normal", "theme": "device"}
+        defaults = {"layout": "tiles", "density": "comfortable", "order": "added", "favorites": "show",
+                    "text": "normal", "theme": "device"}
         self.assertEqual(self.call("GET", "/api/settings", user="a")[1], defaults)
         self.assertEqual(self.call("PUT", "/api/settings", {"layout": "rows"}, user="a")[0], 200)
-        self.assertEqual(self.call("PUT", "/api/settings", {"text": "large"}, user="a")[0], 200)
+        self.assertEqual(self.call("PUT", "/api/settings", {"text": "large", "density": "compact"}, user="a")[0], 200)
         self.assertEqual(self.call("GET", "/api/settings", user="a")[1],
-                         {**defaults, "layout": "rows", "text": "large"})
+                         {**defaults, "layout": "rows", "text": "large", "density": "compact"})
         self.assertEqual(self.call("GET", "/api/settings", user="b")[1], defaults)
         self.assertEqual(self.call("PUT", "/api/settings", {"layout": "grid"}, user="a")[0], 400)
 
