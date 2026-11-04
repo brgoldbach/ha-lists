@@ -3,7 +3,7 @@
 The app keeps no items. Each list is a `todo` entity in Home Assistant, and each change goes
 through Home Assistant, so this page and the stock To-do page always show the same lists.
 The app stores only the look of each list (color, category, and whether the page hides it), the
-categories, and each person's view settings.
+categories, the order of the lists, and each person's favorites and view settings.
 
 Related Documentation: DOCS.md.
 """
@@ -16,6 +16,7 @@ import socket
 import struct
 import threading
 import time
+import traceback
 import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -28,6 +29,10 @@ LOOKS_FILE = DATA_DIR / "looks.json"
 # A category stays after its last list leaves it, so the app keeps them apart from the looks.
 CATEGORIES_FILE = DATA_DIR / "categories.json"
 SETTINGS_FILE = DATA_DIR / "settings.json"
+# One order of the lists for everyone, and each person's favorites. Both hold entity IDs.
+ORDER_FILE = DATA_DIR / "order.json"
+FAVORITES_FILE = DATA_DIR / "favorites.json"
+ORDER_MAX = 1000
 STATIC_DIR = Path(__file__).parent / "static"
 INDEX_FILE = STATIC_DIR / "index.html"
 CONTENT_TYPES = {".js": "text/javascript", ".json": "application/json"}
@@ -47,14 +52,20 @@ NAME_MAX = 40
 ITEM_MAX = 200
 CATEGORY_MAX = 30
 EXPORT_VERSION = 1
+SELF_CHECK_S = 3600
+RETRY_S = 60
+NOTIFICATION_ID = "lists_app"
+# What the app uses from Home Assistant. The self-check reports any of them that an update takes away.
+REQUIRED_ACTIONS = {"todo": {"add_item", "update_item", "remove_item", "remove_completed_items", "get_items"},
+                    "persistent_notification": {"create", "dismiss"}}
 # Same names as the color classes on the page. A custom color from the color wheel is a hex code instead.
 COLORS = ["teal", "cyan", "blue", "navy", "indigo", "purple", "magenta", "pink", "red", "orange", "amber", "brown",
           "lime", "green", "slate", "graphite"]
 CUSTOM_COLOR = re.compile(r"#[0-9a-f]{6}")
 LOOK_FIELDS = {"color": str, "category": str, "hidden": bool}
 # Each person's view settings. The first choice of each is the default.
-SETTINGS = {"layout": ["tiles", "rows"], "order": ["added", "name"], "text": ["normal", "large"],
-            "theme": ["device", "light", "dark"]}
+SETTINGS = {"layout": ["tiles", "rows"], "order": ["added", "name"], "favorites": ["show", "hide"],
+            "text": ["normal", "large"], "theme": ["device", "light", "dark"]}
 DEFAULT_SETTINGS = {name: choices[0] for name, choices in SETTINGS.items()}
 # A list is deletable here only if it is a Local To-do list: its config entry holds that one list.
 LISTS_TEMPLATE = """
@@ -73,6 +84,10 @@ TRUSTED_CLIENT = "172.30.32.2" if "SUPERVISOR_TOKEN" in os.environ else None
 
 # Held across each read-modify-write of a data file, and across creating or deleting a list.
 save_lock = threading.Lock()
+# What the last self-check found wrong, or "" when Home Assistant offers all the app uses.
+problem = ""
+# Set to run the self-check at once, for example after an unexpected error.
+check_now = threading.Event()
 
 
 class BadRequest(Exception):
@@ -81,6 +96,10 @@ class BadRequest(Exception):
 
 class HomeAssistantError(Exception):
     pass
+
+
+class Unreachable(HomeAssistantError):
+    """Home Assistant did not answer, for example while it restarts. That alone is no sign that it changed."""
 
 
 def load_json(path, default):
@@ -179,6 +198,19 @@ def page_lists(todos, looks):
              **looks.get(todo["entity_id"], {})} for todo in todos]
 
 
+def clean_order(order):
+    """Return `order`, a list of entity IDs, without repeats."""
+    if not isinstance(order, list) or len(order) > ORDER_MAX:
+        raise BadRequest("Invalid order.")
+    return list(dict.fromkeys(entity_param(entity_id) for entity_id in order))
+
+
+def set_favorite(favorites, entity_id, favorite):
+    """Return `favorites` with `entity_id` added at the end, or removed."""
+    favorites = [other for other in favorites if other != entity_id]
+    return [*favorites, entity_id] if favorite else favorites
+
+
 def load_settings(user):
     return {**DEFAULT_SETTINGS, **load_json(SETTINGS_FILE, {}).get(user, {})}
 
@@ -239,7 +271,7 @@ def ha(method, path, body=None):
                 message = error.reason
         raise HomeAssistantError(f"Home Assistant: {message}")
     except (URLError, OSError):
-        raise HomeAssistantError("Cannot reach Home Assistant.")
+        raise Unreachable("Cannot reach Home Assistant.")
     return json.loads(text) if is_json else text
 
 
@@ -291,8 +323,10 @@ def ha_command(command):
                 raise HomeAssistantError("Home Assistant refused the app's token.")
             send_frame(connection, {"id": 1, **command})
             reply = receive_frame(stream)
-    except (OSError, ValueError):
-        raise HomeAssistantError("Cannot reach Home Assistant.")
+    except OSError:
+        raise Unreachable("Cannot reach Home Assistant.")
+    except ValueError:
+        raise HomeAssistantError("Home Assistant sent a websocket reply that the app cannot read.")
     if not reply.get("success"):
         raise HomeAssistantError(f"Home Assistant: {reply.get('error', {}).get('message', 'the command failed')}")
     return reply["result"]
@@ -347,18 +381,35 @@ def todo_action(service, data):
 
 
 def export_data():
-    """Return every list with its look and items, the categories in order, and each person's settings."""
+    """Return every list with its look and items, the categories and lists in order, and each person's favorites
+    and settings.
+
+    The order and the favorites name each list by its name: entity IDs can differ in another Home Assistant.
+    """
     looks = load_looks()
-    return {"version": EXPORT_VERSION, "categories": load_categories(looks),
+    todos = page_lists(fetch_lists(), looks)
+    names = {todo["entity_id"]: todo["name"] for todo in todos}
+
+    def named(entity_ids):
+        return [names[entity_id] for entity_id in entity_ids if entity_id in names]
+
+    return {"version": EXPORT_VERSION, "categories": load_categories(looks), "order": named(load_json(ORDER_FILE, [])),
             "lists": [{"name": todo["name"], **{key: todo[key] for key in LOOK_FIELDS},
                        "items": [{key: item[key] for key in ("summary", "status", "description") if item.get(key)}
                                  for item in fetch_items(todo["entity_id"])]}
-                      for todo in page_lists(fetch_lists(), looks)],
+                      for todo in todos],
+            "favorites": {user: named(entity_ids) for user, entity_ids in load_json(FAVORITES_FILE, {}).items()},
             "settings": load_json(SETTINGS_FILE, {})}
 
 
+def name_list(value):
+    if not isinstance(value, list) or not all(isinstance(name, str) for name in value):
+        raise BadRequest("Expected a file exported from Lists.")
+    return value
+
+
 def clean_import(data):
-    """Return the lists, categories, and settings of `data`, a file from export_data, checked and trimmed."""
+    """Return `data`, a file from export_data, checked and trimmed."""
     if not isinstance(data, dict) or data.get("version") != EXPORT_VERSION or not isinstance(data.get("lists"), list):
         raise BadRequest("Expected a file exported from Lists.")
     lists = []
@@ -375,16 +426,18 @@ def clean_import(data):
         lists.append({"name": clean_name(entry.get("name"), []), "items": items,
                       "look": validate_look({key: entry[key] for key in LOOK_FIELDS if key in entry},
                                             default_look("todo.import"))})
-    categories = data.get("categories", [])
-    settings = data.get("settings", {})
-    if not isinstance(categories, list) or not isinstance(settings, dict):
+    favorites, settings = data.get("favorites", {}), data.get("settings", {})
+    if not isinstance(favorites, dict) or not isinstance(settings, dict):
         raise BadRequest("Expected a file exported from Lists.")
-    return (lists, [clean_category(name) for name in categories],
-            {str(user): validate_settings(choices, DEFAULT_SETTINGS) for user, choices in settings.items()})
+    return {"lists": lists, "categories": [clean_category(name) for name in name_list(data.get("categories", []))],
+            "order": name_list(data.get("order", [])),
+            "favorites": {str(user): name_list(names) for user, names in favorites.items()},
+            "settings": {str(user): validate_settings(choices, DEFAULT_SETTINGS) for user, choices in settings.items()}}
 
 
-def import_data(lists, categories, settings):
-    """Add the lists and items that Home Assistant lacks. Take the looks, category order, and settings.
+def import_data(data):
+    """Add the lists and items of `data` that Home Assistant lacks. Take the looks, the orders, the favorites, and
+    the settings.
 
     Delete nothing. Return the number of new lists and new items. Call under save_lock.
     """
@@ -392,10 +445,10 @@ def import_data(lists, categories, settings):
     looks = load_looks()
     known = load_categories(looks)
     counts = {"lists": 0, "items": 0}
-    for entry in lists:
+    for entry in data["lists"]:
         todo = by_name.get(entry["name"].casefold())
         if not todo:
-            todo = create_list(entry["name"])
+            todo = by_name[entry["name"].casefold()] = create_list(entry["name"])
             counts["lists"] += 1
         entity_id = todo["entity_id"]
         looks[entity_id] = entry["look"]
@@ -412,10 +465,77 @@ def import_data(lists, categories, settings):
                    {"entity_id": entity_id, "item": item["summary"], "status": "completed"})
             have.add(item["summary"].casefold())
             counts["items"] += 1
-    # The file's category order first, then categories that only this Home Assistant has.
-    save_looks(looks, [*categories, *known])
-    save_json(SETTINGS_FILE, {**load_json(SETTINGS_FILE, {}), **settings})
+
+    def entity_ids(names):
+        return [by_name[name.casefold()]["entity_id"] for name in names if name.casefold() in by_name]
+
+    # The file's orders come first, then what only this Home Assistant has.
+    save_looks(looks, [*data["categories"], *known])
+    save_json(ORDER_FILE, list(dict.fromkeys([*entity_ids(data["order"]), *load_json(ORDER_FILE, [])])))
+    save_json(FAVORITES_FILE, {**load_json(FAVORITES_FILE, {}),
+                               **{user: entity_ids(names) for user, names in data["favorites"].items()}})
+    save_json(SETTINGS_FILE, {**load_json(SETTINGS_FILE, {}), **data["settings"]})
     return counts
+
+
+def find_problem():
+    """Return what the app needs and does not find, or "" when all is there.
+
+    Raise Unreachable when Home Assistant does not answer.
+    """
+    for path in (LOOKS_FILE, CATEGORIES_FILE, ORDER_FILE, FAVORITES_FILE, SETTINGS_FILE):
+        try:
+            load_json(path, None)
+        except ValueError:
+            return f"its file {path.name} is damaged. Restore the app from a backup, or import an export"
+    try:
+        services = {entry["domain"]: set(entry["services"]) for entry in ha("GET", "services")}
+        missing = sorted(f"{domain}.{action}" for domain, actions in REQUIRED_ACTIONS.items()
+                         for action in actions - services.get(domain, set()))
+        if missing:
+            return f"Home Assistant no longer offers {', '.join(missing)}"
+        if "local_todo" not in ha("GET", "config/config_entries/flow_handlers"):
+            return "Home Assistant can no longer create Local To-do lists"
+        fetch_lists()
+        ha_command({"type": "get_config"})
+    except Unreachable:
+        raise
+    except Exception as error:
+        # Any other failure here means a call that used to work does not anymore.
+        return f"a call to Home Assistant failed ({error!r})"
+    return ""
+
+
+def report(found):
+    """Show `found` as a Home Assistant notification, or take the notification away when `found` is ""."""
+    if found:
+        ha("POST", "services/persistent_notification/create", {
+            "notification_id": NOTIFICATION_ID, "title": "Lists app needs an update",
+            "message": f"The Lists app found a problem: {found}.\n\nYour lists are safe in Home Assistant, and the app "
+                       "keeps its settings. Look for an update of the Lists app."})
+    else:
+        ha("POST", "services/persistent_notification/dismiss", {"notification_id": NOTIFICATION_ID})
+
+
+def self_check_loop():
+    """Check Home Assistant at start, every hour, and after an unexpected error. Report each change in the result."""
+    global problem
+    reported = None
+    while True:
+        check_now.clear()
+        try:
+            problem = find_problem()
+        except Unreachable:
+            check_now.wait(RETRY_S)
+            continue
+        if problem != reported:
+            print(f"Self-check: {problem or 'Home Assistant offers all that the app uses.'}", flush=True)
+            try:
+                report(problem)
+                reported = problem
+            except HomeAssistantError as error:
+                print(f"Self-check: cannot show a notification ({error})", flush=True)
+        check_now.wait(SELF_CHECK_S)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -429,7 +549,8 @@ class Handler(BaseHTTPRequestHandler):
         self.route({route: self.get_vendor for route in VENDOR_ROUTES})
 
     def do_PUT(self):
-        self.route({"/api/look": self.put_look, "/api/categories": self.put_categories, "/api/items": self.put_item,
+        self.route({"/api/look": self.put_look, "/api/categories": self.put_categories, "/api/order": self.put_order,
+                    "/api/favorites": self.put_favorites, "/api/items": self.put_item,
                     "/api/settings": self.put_settings})
 
     def do_POST(self):
@@ -450,7 +571,14 @@ class Handler(BaseHTTPRequestHandler):
         except BadRequest as error:
             self.send_json(400, {"error": str(error)})
         except HomeAssistantError as error:
+            if not isinstance(error, Unreachable):
+                check_now.set()
             self.send_json(502, {"error": str(error)})
+        except Exception:
+            # Most likely Home Assistant changed a reply. Log it, check Home Assistant at once, and keep serving.
+            traceback.print_exc()
+            check_now.set()
+            self.send_json(500, {"error": "Lists hit a problem that it cannot handle yet. Its log has the details."})
 
     def log_message(self, format, *args):
         # The page polls every few seconds, which would fill the app log.
@@ -494,7 +622,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def get_lists(self, query):
         looks = load_looks()
-        self.send_json(200, {"lists": page_lists(fetch_lists(), looks), "categories": load_categories(looks)})
+        self.send_json(200, {"lists": page_lists(fetch_lists(), looks), "categories": load_categories(looks),
+                             "order": load_json(ORDER_FILE, []),
+                             "favorites": load_json(FAVORITES_FILE, {}).get(self.user(), []), "problem": problem})
 
     def post_list(self, query):
         body = self.read_json()
@@ -530,6 +660,9 @@ class Handler(BaseHTTPRequestHandler):
             categories = load_categories(looks)
             looks.pop(entity_id, None)
             save_looks(looks, categories)
+            save_json(ORDER_FILE, [other for other in load_json(ORDER_FILE, []) if other != entity_id])
+            save_json(FAVORITES_FILE, {user: set_favorite(entity_ids, entity_id, False)
+                                       for user, entity_ids in load_json(FAVORITES_FILE, {}).items()})
         self.send_json(200, {"deleted": entity_id})
 
     def put_look(self, query):
@@ -549,6 +682,23 @@ class Handler(BaseHTTPRequestHandler):
             save_json(CATEGORIES_FILE, categories)
         self.send_json(200, categories)
 
+    def put_order(self, query):
+        order = clean_order(self.read_json().get("order"))
+        with save_lock:
+            save_json(ORDER_FILE, order)
+        self.send_json(200, order)
+
+    def put_favorites(self, query):
+        body = self.read_json()
+        entity_id, favorite = entity_param(body.get("entity_id")), body.get("favorite")
+        if not isinstance(favorite, bool):
+            raise BadRequest("Expected entity_id and favorite.")
+        with save_lock:
+            everyone = load_json(FAVORITES_FILE, {})
+            everyone[self.user()] = set_favorite(everyone.get(self.user(), []), entity_id, favorite)
+            save_json(FAVORITES_FILE, everyone)
+        self.send_json(200, everyone[self.user()])
+
     def post_rename_category(self, query):
         body = self.read_json()
         with save_lock:
@@ -563,9 +713,9 @@ class Handler(BaseHTTPRequestHandler):
                   {"Content-Disposition": 'attachment; filename="lists.json"'})
 
     def post_import(self, query):
-        lists, categories, settings = clean_import(self.read_json())
+        data = clean_import(self.read_json())
         with save_lock:
-            counts = import_data(lists, categories, settings)
+            counts = import_data(data)
         self.send_json(200, counts)
 
     def get_settings(self, query):
@@ -609,4 +759,5 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    threading.Thread(target=self_check_loop, daemon=True).start()
     ThreadingHTTPServer(("", PORT), Handler).serve_forever()

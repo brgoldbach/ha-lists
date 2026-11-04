@@ -23,12 +23,17 @@ class FakeHomeAssistant:
     """Serves the REST calls the app makes, on a free local port.
 
     `lists` maps entity IDs to {"name", "entry_id", "items"}. An `entry_id` of None marks a
-    list of another integration. Tests change `lists` directly to act as the stock To-do page.
+    list of another integration. Tests change `lists` directly to act as the stock To-do page,
+    and change `services` or `flow_handlers` to act as a Home Assistant update.
     """
 
     def __init__(self):
         self.lists = {}
         self.flows = set()
+        self.services = {"todo": {"add_item", "update_item", "remove_item", "remove_completed_items", "get_items"},
+                         "persistent_notification": {"create", "dismiss"}}
+        self.flow_handlers = ["local_todo", "shopping_list"]
+        self.notifications = {}
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), self.handler())
         self.url = f"http://127.0.0.1:{self.server.server_port}/api"
         self.ws_url = f"ws://127.0.0.1:{self.server.server_port}/api/websocket"
@@ -66,6 +71,8 @@ class FakeHomeAssistant:
         raise KeyError("Invalid entry specified")
 
     def ws_command(self, command):
+        if command.get("type") == "get_config":
+            return {"success": True, "result": {"version": "2026.10.4"}}
         todo = self.lists.get(command.get("entity_id"))
         if command.get("type") != "config/entity_registry/update" or not todo:
             return {"success": False, "error": {"code": "not_found", "message": "Entity not found"}}
@@ -100,6 +107,11 @@ class FakeHomeAssistant:
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
+                if self.path == "/api/services":
+                    return self.send(200, [{"domain": domain, "services": {action: {} for action in actions}}
+                                           for domain, actions in fake.services.items()])
+                if self.path == "/api/config/config_entries/flow_handlers":
+                    return self.send(200, fake.flow_handlers)
                 if self.path != "/api/websocket" or self.headers.get("Upgrade") != "websocket":
                     return self.send(404, {"message": "Not found"})
                 key = self.headers["Sec-WebSocket-Key"] + WEBSOCKET_GUID
@@ -155,6 +167,12 @@ class FakeHomeAssistant:
                         return self.send(200, fake.flow_step(match[1], data))
                     if match := re.fullmatch(r"/api/config/config_entries/entry/(\w+)", url.path):
                         return self.send(200, fake.delete_entry(match[1]))
+                    if match := re.fullmatch(r"/api/services/persistent_notification/(create|dismiss)", url.path):
+                        if match[1] == "create":
+                            fake.notifications[data["notification_id"]] = data
+                        else:
+                            fake.notifications.pop(data["notification_id"], None)
+                        return self.send(200, [])
                     if match := re.fullmatch(r"/api/services/todo/(\w+)", url.path):
                         return self.send(200, fake.todo_action(match[1], data, url.query == "return_response"))
                 except KeyError as error:

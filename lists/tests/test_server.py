@@ -15,8 +15,9 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "app"))
 
 import server  # noqa: E402
 from fake_ha import TOKEN, FakeHomeAssistant  # noqa: E402
-from server import (BadRequest, HomeAssistantError, all_categories, clean_name, default_look, page_lists,  # noqa: E402
-                    receive_frame, rename_category, reorder_categories, validate_look, validate_settings)
+from server import (BadRequest, HomeAssistantError, Unreachable, all_categories, clean_name, clean_order,  # noqa: E402
+                    default_look, page_lists, receive_frame, rename_category, reorder_categories, set_favorite,
+                    validate_look, validate_settings)
 
 LOOK = {"color": "teal", "category": "", "hidden": False}
 
@@ -44,8 +45,22 @@ class ValidateLookTest(unittest.TestCase):
                 validate_look(changes, LOOK)
 
 
+class OrderAndFavoritesTest(unittest.TestCase):
+    def test_order_drops_repeats(self):
+        self.assertEqual(clean_order(["todo.b", "todo.a", "todo.b"]), ["todo.b", "todo.a"])
+
+    def test_rejects_bad_order(self):
+        for order in ("todo.a", ["light.kitchen"], [1], ["todo.a"] * 1001):
+            with self.subTest(order=order[:2]), self.assertRaises(BadRequest):
+                clean_order(order)
+
+    def test_favorite_goes_last_and_comes_off(self):
+        self.assertEqual(set_favorite(["todo.a", "todo.b"], "todo.a", True), ["todo.b", "todo.a"])
+        self.assertEqual(set_favorite(["todo.a", "todo.b"], "todo.a", False), ["todo.b"])
+
+
 class ValidateSettingsTest(unittest.TestCase):
-    CURRENT = {"layout": "tiles", "order": "added", "text": "normal", "theme": "device"}
+    CURRENT = {"layout": "tiles", "order": "added", "favorites": "show", "text": "normal", "theme": "device"}
 
     def test_applies_changes(self):
         self.assertEqual(validate_settings({"layout": "rows", "theme": "dark"}, self.CURRENT),
@@ -152,7 +167,9 @@ class AppTest(unittest.TestCase):
         for name, value in (("HA_URL", self.ha.url), ("HA_WS_URL", self.ha.ws_url), ("HA_TOKEN", TOKEN),
                             ("LOOKS_FILE", Path(data.name) / "looks.json"),
                             ("CATEGORIES_FILE", Path(data.name) / "categories.json"),
-                            ("SETTINGS_FILE", Path(data.name) / "settings.json")):
+                            ("SETTINGS_FILE", Path(data.name) / "settings.json"),
+                            ("ORDER_FILE", Path(data.name) / "order.json"),
+                            ("FAVORITES_FILE", Path(data.name) / "favorites.json")):
             patcher = mock.patch.object(server, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -276,6 +293,25 @@ class AppTest(unittest.TestCase):
         self.call("POST", "/api/categories/rename", {"from": "Stores", "to": ""})
         self.assertEqual(self.categories(), ["Hardware"])
 
+    def test_keeps_one_order_for_everyone_and_favorites_for_each_person(self):
+        grocery, lowes = self.ha.add_list("Grocery"), self.ha.add_list("Lowes")
+        self.assertEqual(self.call("PUT", "/api/order", {"order": [lowes, grocery]}), (200, [lowes, grocery]))
+        self.assertEqual(self.call("PUT", "/api/favorites", {"entity_id": grocery, "favorite": True}, user="a"),
+                         (200, [grocery]))
+        self.assertEqual(self.call("GET", "/api/lists", user="b")[1]["order"], [lowes, grocery])
+        self.assertEqual(self.call("GET", "/api/lists", user="a")[1]["favorites"], [grocery])
+        self.assertEqual(self.call("GET", "/api/lists", user="b")[1]["favorites"], [])
+        self.assertEqual(self.call("PUT", "/api/favorites", {"entity_id": grocery, "favorite": "yes"}, user="a")[0],
+                         400)
+
+    def test_delete_drops_list_from_order_and_favorites(self):
+        entity_id = self.call("POST", "/api/lists", {"name": "Lowes"})[1]["entity_id"]
+        self.call("PUT", "/api/order", {"order": [entity_id]})
+        self.call("PUT", "/api/favorites", {"entity_id": entity_id, "favorite": True}, user="a")
+        self.call("POST", "/api/lists/delete", {"entity_id": entity_id})
+        reply = self.call("GET", "/api/lists", user="a")[1]
+        self.assertEqual((reply["order"], reply["favorites"]), ([], []))
+
     def test_reorders_categories(self):
         grocery, fence = self.ha.add_list("Grocery"), self.ha.add_list("Fence")
         self.call("PUT", "/api/look", {"entity_id": fence, "category": "Projects"})
@@ -305,7 +341,7 @@ class AppTest(unittest.TestCase):
         self.assertEqual(self.call("GET", "/vendor/emoji-picker-element/LICENSE")[0], 404)
 
     def test_keeps_settings_for_each_person(self):
-        defaults = {"layout": "tiles", "order": "added", "text": "normal", "theme": "device"}
+        defaults = {"layout": "tiles", "order": "added", "favorites": "show", "text": "normal", "theme": "device"}
         self.assertEqual(self.call("GET", "/api/settings", user="a")[1], defaults)
         self.assertEqual(self.call("PUT", "/api/settings", {"layout": "rows"}, user="a")[0], 200)
         self.assertEqual(self.call("PUT", "/api/settings", {"text": "large"}, user="a")[0], 200)
@@ -321,14 +357,18 @@ class AppTest(unittest.TestCase):
         self.ha.add_list("Shopping list", local=False, items=["Soap"])
         self.call("PUT", "/api/look", {"entity_id": grocery, "color": "#3a86ff", "category": "Stores"})
         self.call("PUT", "/api/categories", {"order": ["Stores"]})
+        self.call("PUT", "/api/order", {"order": ["todo.shopping_list", grocery]})
+        self.call("PUT", "/api/favorites", {"entity_id": grocery, "favorite": True}, user="a")
         self.call("PUT", "/api/settings", {"layout": "rows"}, user="a")
         with urlopen(self.url + "/api/export") as response:
             self.assertIn("lists.json", response.headers["Content-Disposition"])
             exported = json.load(response)
+        self.assertEqual((exported["order"], exported["favorites"]), (["Shopping list", "🛒 Grocery"],
+                                                                      {"a": ["🛒 Grocery"]}))
 
         self.ha.lists.clear()
-        for file in (server.LOOKS_FILE, server.CATEGORIES_FILE, server.SETTINGS_FILE):
-            file.unlink()
+        for name in ("LOOKS_FILE", "CATEGORIES_FILE", "SETTINGS_FILE", "ORDER_FILE", "FAVORITES_FILE"):
+            getattr(server, name).unlink()
         self.assertEqual(self.call("POST", "/api/import", exported), (200, {"lists": 2, "items": 3}))
 
         items = {item["summary"]: item for item in self.ha.lists["todo.grocery"]["items"]}
@@ -338,6 +378,9 @@ class AppTest(unittest.TestCase):
         lists = self.lists()
         self.assertEqual((lists["todo.grocery"]["color"], lists["todo.grocery"]["category"]), ("#3a86ff", "Stores"))
         self.assertEqual(self.call("GET", "/api/settings", user="a")[1]["layout"], "rows")
+        reply = self.call("GET", "/api/lists", user="a")[1]
+        self.assertEqual((reply["order"], reply["favorites"]),
+                         (["todo.shopping_list", "todo.grocery"], ["todo.grocery"]))
 
     def test_import_adds_only_what_is_missing(self):
         self.ha.add_list("Grocery", items=["Eggs"])
@@ -356,6 +399,49 @@ class AppTest(unittest.TestCase):
             with self.subTest(body=body):
                 self.assertEqual(self.call("POST", "/api/import", body)[0], 400)
         self.assertEqual(self.ha.lists, {})
+
+    def test_self_check_finds_nothing_wrong(self):
+        self.assertEqual(server.find_problem(), "")
+
+    def test_self_check_reports_a_missing_action_and_then_takes_the_report_away(self):
+        self.ha.services["todo"].discard("get_items")
+        found = server.find_problem()
+        self.assertIn("todo.get_items", found)
+        server.report(found)
+        self.assertIn("todo.get_items", self.ha.notifications["lists_app"]["message"])
+        self.ha.services["todo"].add("get_items")
+        server.report(server.find_problem())
+        self.assertEqual(self.ha.notifications, {})
+
+    def test_self_check_reports_that_local_todo_cannot_create_lists(self):
+        self.ha.flow_handlers.remove("local_todo")
+        self.assertIn("Local To-do", server.find_problem())
+
+    def test_damaged_data_file_is_reported_and_kept(self):
+        entity_id = self.ha.add_list("Grocery")
+        server.LOOKS_FILE.write_text("{")
+        self.assertIn("looks.json", server.find_problem())
+        with mock.patch("traceback.print_exc"):
+            self.assertEqual(self.call("PUT", "/api/look", {"entity_id": entity_id, "color": "red"})[0], 500)
+        self.assertEqual(server.LOOKS_FILE.read_text(), "{")
+
+    def test_self_check_waits_while_home_assistant_does_not_answer(self):
+        self.ha.close()
+        with self.assertRaises(Unreachable):
+            server.find_problem()
+
+    def test_unexpected_reply_gives_a_clear_error_and_starts_the_self_check(self):
+        entity_id = self.ha.add_list("Grocery")
+        server.check_now.clear()
+        with mock.patch.object(server, "fetch_items", side_effect=KeyError("items")), mock.patch("traceback.print_exc"):
+            status, body = self.call("GET", f"/api/items?list={entity_id}")
+        self.assertEqual(status, 500)
+        self.assertIn("cannot handle", body["error"])
+        self.assertTrue(server.check_now.is_set())
+
+    def test_lists_reply_carries_the_problem(self):
+        with mock.patch.object(server, "problem", "Home Assistant no longer offers todo.get_items"):
+            self.assertIn("todo.get_items", self.call("GET", "/api/lists")[1]["problem"])
 
     def test_rejects_entity_that_is_not_a_todo_list(self):
         self.assertEqual(self.call("GET", "/api/items?list=light.kitchen")[0], 400)

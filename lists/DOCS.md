@@ -50,6 +50,7 @@ Home Assistant cannot open an app page at sign-in, so the person opens Home Assi
 | Give a list an icon | Put an emoji in its name, for example "🛒 Grocery". The first emoji is the icon, and the page shows the name without it. A name can have more emoji, for example "🛒 Grocery 🥕". A list without an emoji shows its first letter. |
 | Type an emoji | On a phone, use the emoji keyboard. On a computer, put the cursor where the emoji goes, then select **😀** next to the name to search all emoji. |
 | Pick a color | Tap one of the 16 colors, or the rainbow swatch for any color from the device's color picker. On a light color, the text turns dark. |
+| Make a list a favorite | Open it. Tap **⋯**, then **Add to favorites**. Your favorites show in a **★ Favorites** section at the top of the page. Each person has their own. |
 | Change a list | Open it. Tap **⋯**, then **Edit list**. A new name also shows on the stock To-do page and to voice assistants. The entity ID stays the same. |
 | Hide a list | Tap **⋯**, then **Hide list**. It moves to **Hidden lists** at the bottom of the page, and stays in Home Assistant. To show it again, open it, then tap **⋯** and **Show list**. |
 | Delete a list | Tap **⋯**, then **Delete list**, then **Delete**. This also deletes all its items. Only a Home Assistant backup brings them back. |
@@ -71,7 +72,9 @@ To drag on a phone, hold the list or heading still for a moment, then drag. With
 
 | To | Do this |
 |---|---|
-| Move a list to another section | Drag it onto the section. Drop it on **Other** to remove its category. |
+| Change the order of the lists | Drag a list onto another list. It takes that place: a bar shows on the side where it lands. Everyone sees the same order. |
+| Move a list to another section | Drag it onto the section, or onto a list in it. Drop it on **Other** to remove its category. |
+| Make a list a favorite by drag | Drag it onto **★ Favorites**. Drag it out to a section to undo. |
 | Change the order of the sections | Drag a section by its heading (⠿). A new category goes at the end, and **Other** always stays last. |
 | Rename or remove a category | Tap its heading (✎). The new name applies to every list in it. To remove the category, clear the name; its lists move to **Other**. |
 
@@ -83,6 +86,7 @@ Tap the settings button at the top right of the Lists page. Each person keeps th
 |---|---|
 | Layout | Tiles or rows |
 | Item order | As added, or A–Z. A–Z changes only this page; Home Assistant keeps the order the items were added. |
+| Favorites | Show or hide the **★ Favorites** section. When it is hidden, your favorites stay in their sections, and they come back when you show it again. |
 | Text size | Normal or large |
 | Theme | Follow the device, light, or dark |
 
@@ -90,8 +94,8 @@ Tap the settings button at the top right of the Lists page. Each person keeps th
 
 Under **Backup** in the settings:
 
-- **Export** saves a JSON file with every list, item, color, category, and each person's settings.
-- **Import** reads such a file. It adds the lists and items that are missing, matched by name, and takes the colors, categories, category order, and settings from the file. It never deletes or changes items that are already there.
+- **Export** saves a JSON file with every list, item, color, and category, the order of the lists and categories, and each person's favorites and settings.
+- **Import** reads such a file. It adds the lists and items that are missing, matched by name, and takes the colors, categories, orders, favorites, and settings from the file. It never deletes or changes items that are already there.
 
 Use them to move the lists to another Home Assistant, or to keep a copy apart from Home Assistant backups.
 
@@ -102,6 +106,28 @@ Use them to move the lists to another Home Assistant, or to keep a copy apart fr
 | Lists and items | Home Assistant: `.storage/local_todo.<name>.ics`, one file for each list |
 | Color, category, and hidden state of each list | The app's `/data/looks.json`. Everyone sees the same. |
 | Categories and their order, also empty ones | The app's `/data/categories.json`. Everyone sees the same. |
+| Order of the lists | The app's `/data/order.json`. Everyone sees the same. |
+| Favorites, for each person | The app's `/data/favorites.json` |
 | Settings, for each person | The app's `/data/settings.json` |
 
 A Home Assistant backup saves all of it, if the backup includes Home Assistant and this app.
+
+## When Home Assistant changes
+
+The app uses Home Assistant's to-do actions, the Local To-do integration, and a few Home Assistant APIs. A Home Assistant update can change one of them. So the app checks that all of them still work: when it starts, every hour, and at once after an unexpected error.
+
+If something is missing, the app reports it in three places:
+
+- a notification in Home Assistant, **Lists app needs an update**, under the bell in the sidebar;
+- a red banner at the top of the Lists page;
+- the app's **Log** tab.
+
+The notification goes away by itself when the check passes again. While Home Assistant restarts, the app waits and checks again; that is not a problem.
+
+Your data stays safe:
+
+- The lists and items live in Home Assistant. The app never deletes them, except when you delete a list.
+- The app writes each of its files in one step, so a failure never leaves half a file.
+- The app does not write over a damaged file. It reports the file instead. Restore it from a Home Assistant backup, or import an export.
+
+When you see the report, look for an update of the Lists app. An export from **Backup** in the settings is a good copy to keep meanwhile.

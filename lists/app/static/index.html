@@ -117,6 +117,11 @@
   .ghost { position: fixed; z-index: 10; margin: 0; pointer-events: none; transform: scale(1.04) rotate(-1.5deg);
     box-shadow: 0 12px 30px rgb(0 0 0 / 0.35); }
   .group.drop { border-radius: 22px; outline: 2px dashed var(--muted); outline-offset: 6px; }
+  /* A bar on the edge where a dropped list lands: left or right of a tile, above or below a row. */
+  .tiles .insert-before { box-shadow: inset 5px 0 0 var(--text); }
+  .tiles .insert-after { box-shadow: inset -5px 0 0 var(--text); }
+  .rows .insert-before { box-shadow: inset 0 5px 0 var(--text); }
+  .rows .insert-after { box-shadow: inset 0 -5px 0 var(--text); }
   .zone { display: grid; place-items: center; min-height: 64px; border: 2px dashed var(--line); border-radius: 18px;
     color: var(--muted); }
 
@@ -231,6 +236,9 @@
   .menu .danger, .error { color: var(--danger); }
   .hint { margin: 8px 12px; color: var(--muted); font-size: 14px; }
 
+  .banner { margin: 0 0 16px; padding: 12px 14px; border-radius: 14px; background: var(--danger); color: #fff;
+    font-size: 15px; }
+
   #status {
     position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%);
     max-width: calc(100vw - 32px); padding: 10px 16px; border-radius: 14px;
@@ -253,6 +261,7 @@
 </header>
 
 <main>
+  <p id="problem" class="banner" role="alert" hidden></p>
   <section id="home">
     <p id="no-lists" class="empty" data-icon="🛒">No lists yet. Tap + to add one.</p>
     <div id="groups"></div>
@@ -339,6 +348,11 @@
       <label><input type="radio" name="order" value="added"><span>As added</span></label>
       <label><input type="radio" name="order" value="name"><span>A–Z</span></label>
     </div>
+    <span class="label">Favorites</span>
+    <div class="segmented" role="radiogroup" aria-label="Favorites">
+      <label><input type="radio" name="favorites" value="show"><span>Show</span></label>
+      <label><input type="radio" name="favorites" value="hide"><span>Hide</span></label>
+    </div>
     <span class="label">Text size</span>
     <div class="segmented" role="radiogroup" aria-label="Text size">
       <label><input type="radio" name="text" value="normal"><span>Normal</span></label>
@@ -366,6 +380,7 @@
   <h2 id="menu-title"></h2>
   <div class="menu">
     <button id="menu-look" type="button">Edit list</button>
+    <button id="menu-favorite" type="button"></button>
     <button id="menu-hide" type="button"></button>
     <button id="menu-delete" class="danger" type="button">Delete list</button>
   </div>
@@ -395,9 +410,15 @@ const COLORS = ["teal", "cyan", "blue", "navy", "indigo", "purple", "magenta", "
 let lists = [];
 // Every category in its saved order, also one with no lists.
 let categories = [];
+// The entity IDs of all lists in their saved order, the same for everyone.
+let order = [];
+// This person's favorite lists, by entity ID.
+let favorites = [];
+// What the app's self-check found wrong in Home Assistant, or "".
+let problem = "";
 let items = [];
 // This person's view settings. Same names and choices as SETTINGS in server.py.
-let settings = { layout: "tiles", order: "added", text: "normal", theme: "device" };
+let settings = { layout: "tiles", order: "added", favorites: "show", text: "normal", theme: "device" };
 // The data of the last render, so a poll that finds no change leaves the page alone.
 let shown = "";
 // Writes and drags in progress. A poll meanwhile could undo a change on screen or redraw the dragged
@@ -474,6 +495,9 @@ function splitName(name) {
 }
 
 const byLabel = (a, b) => splitName(a.name).label.localeCompare(splitName(b.name).label);
+// Lists in their saved order. A list not in it yet, such as a new one, goes after, by name.
+const rank = (list) => (order.includes(list.entity_id) ? order.indexOf(list.entity_id) : Infinity);
+const byRank = (a, b) => rank(a) - rank(b) || byLabel(a, b);
 
 // A list without an emoji shows the first letter of its name instead.
 function badge(list, className) {
@@ -494,19 +518,23 @@ function row(list) {
     el("span", { className: "row-count", textContent: countLabel(list) })), list.color);
 }
 
-// Every category in its saved order, also an empty one, then the lists without one. Case does not split a
-// category.
+// This person's favorites first, if shown, then every category in its saved order, also an empty one, then
+// the lists without one. Case does not split a category.
 function groups(shown) {
-  const byKey = new Map(categories.map((name) => [name.toLocaleLowerCase(), { title: name, lists: [], named: true }]));
-  for (const list of [...shown].sort(byLabel)) {
+  const starred = (list) => settings.favorites === "show" && favorites.includes(list.entity_id);
+  const byKey = new Map(categories.map((name) =>
+    [name.toLocaleLowerCase(), { title: name, lists: [], kind: "category" }]));
+  for (const list of [...shown].sort(byRank).filter((list) => !starred(list))) {
     const key = list.category.toLocaleLowerCase();
-    if (!byKey.has(key)) byKey.set(key, { title: list.category, lists: [], named: true });
+    if (!byKey.has(key)) byKey.set(key, { title: list.category, lists: [], kind: "category" });
     byKey.get(key).lists.push(list);
   }
   const rest = byKey.get("");
   byKey.delete("");
   const sections = [...byKey.values()];
-  if (rest) sections.push({ title: sections.length ? "Other" : "", lists: rest.lists, named: false });
+  const favored = [...shown].sort(byRank).filter(starred);
+  if (favored.length) sections.unshift({ title: "★ Favorites", lists: favored, kind: "favorites" });
+  if (rest) sections.push({ title: sections.length ? "Other" : "", lists: rest.lists, kind: "other" });
   return sections;
 }
 
@@ -529,15 +557,17 @@ function renderHome() {
   const make = layout === "rows" ? row : tile;
   $("no-lists").hidden = lists.length > 0;
   const sections = groups(lists.filter((list) => !list.hidden));
-  const movable = sections.filter((group) => group.named).length > 1;
-  $("groups").replaceChildren(...sections.map(({ title, lists: members, named }) => {
-    const heading = title ? el("h2", {}, named ? renameButton(title) : title) : "";
+  const movable = sections.filter((group) => group.kind === "category").length > 1;
+  $("groups").replaceChildren(...sections.map(({ title, lists: members, kind }) => {
+    const heading = title ? el("h2", {}, kind === "category" ? renameButton(title) : title) : "";
     const section = el("section", { className: "group" }, heading,
       members.length ? el("div", { className: layout }, ...members.map((list) => draggable(make(list), list)))
         : el("div", { className: "zone", textContent: "No lists" }));
-    // With categories, each section, "Other" too, takes a dropped list.
-    if (title) section.dataset.category = named ? title : "";
-    if (named && movable) {
+    // A list dropped on a section takes its category; "Other" has none. Favorites keeps the category.
+    if (kind === "category") section.dataset.category = title;
+    if (kind === "other" && title) section.dataset.category = "";
+    if (kind === "favorites") section.dataset.favorites = "";
+    if (kind === "category" && movable) {
       heading.prepend(el("span", { className: "grip", textContent: "⠿", ariaHidden: true }));
       heading.addEventListener("pointerdown", (event) => pressSection(event, section));
     }
@@ -613,6 +643,7 @@ function pressToDrag(event, node, { begin, over, drop, cleanUp }) {
 function draggable(card, list) {
   // A link is natively draggable, and that native drag would cancel this one.
   card.draggable = false;
+  card.dataset.entity = list.entity_id;
   card.addEventListener("pointerdown", (event) => pressCard(event, card, list));
   card.addEventListener("contextmenu", (event) => event.preventDefault());
   card.addEventListener("click", (event) => {
@@ -621,36 +652,82 @@ function draggable(card, list) {
   return card;
 }
 
-// Drag a list onto another section to change its category.
+// Drag a list onto another list to take its place, or onto a section to go at its end. The new section
+// sets the list's category, or makes it a favorite.
 function pressCard(event, card, list) {
-  if (!$("groups").querySelector("[data-category]")) return;
-  let target = null;
+  let section = null;
+  let spot = null;
+  const mark = (on) => {
+    section?.classList.toggle("drop", on);
+    spot?.card.classList.toggle(spot.after ? "insert-after" : "insert-before", on);
+  };
   pressToDrag(event, card, {
     begin: () => {
-      if ($("groups").querySelector('[data-category=""]')) return;
+      if (!$("groups").querySelector("[data-category]") || $("groups").querySelector('[data-category=""]')) return;
       const zone = el("section", { className: "group", id: "other-zone" }, el("h2", { textContent: "Other" }),
         el("div", { className: "zone", textContent: "No category" }));
       zone.dataset.category = "";
       $("groups").append(zone);
     },
     over: (x, y) => {
-      const under = document.elementFromPoint(x, y)?.closest("[data-category]");
-      if (under === target) return;
-      target?.classList.remove("drop");
-      target = under;
-      target?.classList.add("drop");
+      const under = document.elementFromPoint(x, y);
+      const other = under?.closest("[data-entity]");
+      mark(false);
+      section = under?.closest("#groups .group") ?? null;
+      spot = null;
+      if (other && other !== card) {
+        // Rows stack, so the top or bottom half decides; tiles sit side by side, so the left or right half.
+        const box = other.getBoundingClientRect();
+        const after = settings.layout === "rows" ? y > box.top + box.height / 2 : x > box.left + box.width / 2;
+        spot = { card: other, after };
+      }
+      mark(true);
     },
     cleanUp: () => {
-      target?.classList.remove("drop");
+      mark(false);
       $("other-zone")?.remove();
     },
     drop: () => {
-      const category = target?.dataset.category;
-      if (category !== undefined && category.toLocaleLowerCase() !== list.category.toLocaleLowerCase()) {
-        moveToCategory(list, category);
-      }
+      if (section) placeList(list, section, spot);
     },
   });
+}
+
+async function placeList(list, section, spot) {
+  const others = (node) => [...node.querySelectorAll("[data-entity]")].map((card) => card.dataset.entity)
+    .filter((entityId) => entityId !== list.entity_id);
+  const shownIds = others($("groups"));
+  const sectionIds = others(section);
+  let index = shownIds.length;
+  if (spot) index = shownIds.indexOf(spot.card.dataset.entity) + (spot.after ? 1 : 0);
+  else if (sectionIds.length) index = shownIds.indexOf(sectionIds.at(-1)) + 1;
+  shownIds.splice(index, 0, list.entity_id);
+  // Hidden lists are not on the page; they keep their place after the shown ones.
+  order = [...shownIds, ...order.filter((entityId) => !shownIds.includes(entityId))];
+  const saves = [send("PUT", "api/order", { order })];
+  const favorite = "favorites" in section.dataset;
+  const label = splitName(list.name).label;
+  if (favorite !== favorites.includes(list.entity_id)) {
+    favorites = favorite ? [...favorites, list.entity_id] : favorites.filter((entityId) => entityId !== list.entity_id);
+    saves.push(send("PUT", "api/favorites", { entity_id: list.entity_id, favorite }));
+    setStatus(favorite ? `${label} is in Favorites.` : `${label} left Favorites.`);
+  }
+  const category = section.dataset.category;
+  if (!favorite && category !== undefined && category.toLocaleLowerCase() !== list.category.toLocaleLowerCase()) {
+    list.category = category;
+    saves.push(send("PUT", "api/look", { entity_id: list.entity_id, category }));
+    setStatus(`Moved ${label} to ${category || "Other"}.`);
+  }
+  busy++;
+  render();
+  try {
+    await Promise.all(saves);
+  } catch (error) {
+    setStatus(error.message, true);
+  } finally {
+    busy--;
+  }
+  refresh();
 }
 
 // Drag a section by its heading to put the categories in another order. "Other" stays last.
@@ -684,21 +761,6 @@ async function saveOrder(order) {
   render();
   try {
     categories = await send("PUT", "api/categories", { order });
-  } catch (error) {
-    setStatus(error.message, true);
-  } finally {
-    busy--;
-  }
-  refresh();
-}
-
-async function moveToCategory(list, category) {
-  busy++;
-  list.category = category;
-  render();
-  try {
-    await send("PUT", "api/look", { entity_id: list.entity_id, category });
-    setStatus(`Moved ${splitName(list.name).label} to ${category || "Other"}.`);
   } catch (error) {
     setStatus(error.message, true);
   } finally {
@@ -741,9 +803,11 @@ function renderList(list) {
 
 function render() {
   const list = currentList();
-  const state = JSON.stringify([currentId(), settings, lists, categories, items]);
+  const state = JSON.stringify([currentId(), settings, lists, categories, order, favorites, problem, items]);
   if (state === shown) return;
   shown = state;
+  $("problem").hidden = !problem;
+  $("problem").textContent = `Lists found a problem: ${problem}. Your lists are safe in Home Assistant.`;
   paint(document.body, list?.color);
   $("top").classList.toggle("colored", !!list);
   $("title").textContent = list ? list.name : "Lists";
@@ -762,8 +826,7 @@ async function refresh() {
     let freshItems = [];
     if (id && fresh.lists.some((list) => list.entity_id === id)) freshItems = await api(itemsPath(id));
     if (busy || id !== currentId()) return;
-    lists = fresh.lists;
-    categories = fresh.categories;
+    ({ lists, categories, order, favorites, problem } = fresh);
     items = freshItems;
     if (id && !currentList()) {
       setStatus("That list was deleted.");
@@ -985,6 +1048,8 @@ $("clear").addEventListener("click", () => write(
 $("menu").addEventListener("click", () => {
   const list = currentList();
   $("menu-title").textContent = list.name;
+  $("menu-favorite").hidden = settings.favorites === "hide";
+  $("menu-favorite").textContent = favorites.includes(list.entity_id) ? "Remove from favorites" : "Add to favorites";
   $("menu-hide").textContent = list.hidden ? "Show list" : "Hide list";
   $("menu-delete").hidden = !list.deletable;
   $("menu-note").hidden = list.deletable;
@@ -994,6 +1059,19 @@ $("menu").addEventListener("click", () => {
 $("menu-look").addEventListener("click", () => {
   $("menu-dialog").close();
   openLook(currentList());
+});
+
+$("menu-favorite").addEventListener("click", async () => {
+  const list = currentList();
+  const favorite = !favorites.includes(list.entity_id);
+  $("menu-dialog").close();
+  try {
+    favorites = await send("PUT", "api/favorites", { entity_id: list.entity_id, favorite });
+    setStatus(favorite ? `${list.name} is in Favorites.` : `${list.name} left Favorites.`);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+  refresh();
 });
 
 $("menu-hide").addEventListener("click", async () => {
