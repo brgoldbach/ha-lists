@@ -66,6 +66,8 @@
     background: rgb(255 255 255 / 0.2); color: inherit; font-size: 22px; line-height: 1; text-decoration: none;
   }
   .top:not(.colored) .round { background: var(--card); box-shadow: var(--shadow); }
+  .top:not(.colored) #new-list { color: var(--ink); background: linear-gradient(135deg, var(--c1), var(--c2));
+    font-size: 28px; font-weight: 300; }
   .round svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 
   .group { margin-bottom: 24px; }
@@ -91,11 +93,6 @@
     background: rgb(255 255 255 / 0.22); font-size: 24px; font-weight: 800; }
   .tile-name { margin-top: auto; padding-top: 14px; font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
   .tile-count { font-size: 14px; opacity: 0.92; }
-  .tile.new { align-items: center; justify-content: center; gap: 6px; background: none; box-shadow: none;
-    border: 2px dashed var(--line); color: var(--muted); }
-  .tile.new::after { content: none; }
-  .tile.new .tile-icon { font-size: 34px; font-weight: 300; }
-  .tile.new .tile-name { margin: 0; padding: 0; font-size: 16px; font-weight: 600; }
   .rows { display: grid; gap: 8px; }
   .row {
     display: flex; align-items: center; gap: 14px; width: 100%; min-height: 62px; padding: 10px 16px;
@@ -109,8 +106,14 @@
   .row-name { flex: 1; min-width: 0; font-weight: 700; overflow-wrap: anywhere; }
   .row-count { flex: none; font-size: 15px; opacity: 0.92; }
   .row-count::after { content: "›"; margin-left: 10px; font-size: 24px; vertical-align: -2px; }
-  .row.new { color: var(--muted); background: none; box-shadow: none; border: 2px dashed var(--line); }
-  .row.new .row-icon { background: none; font-size: 26px; font-weight: 300; }
+  /* A long press must start a drag, not select text or open the phone's link menu. */
+  .tile, .row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  .dragging { opacity: 0.35; }
+  .ghost { position: fixed; z-index: 10; margin: 0; pointer-events: none; transform: scale(1.04) rotate(-1.5deg);
+    box-shadow: 0 12px 30px rgb(0 0 0 / 0.35); }
+  .group.drop { border-radius: 22px; outline: 2px dashed var(--muted); outline-offset: 6px; }
+  .zone { display: grid; place-items: center; min-height: 64px; border: 2px dashed var(--line); border-radius: 18px;
+    color: var(--muted); }
 
   details { margin-top: 28px; }
   summary { color: var(--muted); cursor: pointer; margin-bottom: 12px; }
@@ -228,6 +231,7 @@
 <header id="top" class="top">
   <a id="back" class="round" href="#" aria-label="All lists" hidden>‹</a>
   <h1 id="title">Lists</h1>
+  <button id="new-list" class="round" type="button" aria-label="New list">+</button>
   <button id="settings" class="round" type="button" aria-label="Settings">
     <svg viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/>
       <circle cx="9" cy="17" r="2"/></svg>
@@ -237,6 +241,7 @@
 
 <main>
   <section id="home">
+    <p id="no-lists" class="empty" data-icon="🛒">No lists yet. Tap + to add one.</p>
     <div id="groups"></div>
     <details id="hidden-lists" hidden>
       <summary id="hidden-summary"></summary>
@@ -372,8 +377,11 @@ let items = [];
 let settings = { layout: "tiles", order: "added", text: "normal", theme: "device" };
 // The data of the last render, so a poll that finds no change leaves the page alone.
 let shown = "";
-// Writes in flight. A poll during a write could undo the change already on screen, so polls wait.
+// Writes and drags in progress. A poll meanwhile could undo a change on screen or redraw the dragged
+// list, so polls wait.
 let busy = 0;
+// True from a drop until the click that follows it, so the drop does not also open the list.
+let dropped = false;
 // The list the look dialog edits, or null when it creates a list.
 let lookFor = null;
 let lookColor = "";
@@ -496,20 +504,119 @@ function categoryNames() {
 function renderHome() {
   const hidden = lists.filter((list) => list.hidden);
   const layout = settings.layout;
-  const kind = layout === "rows" ? "row" : "tile";
   const make = layout === "rows" ? row : tile;
-  const add = el("button", { type: "button", className: `${kind} new` },
-    el("span", { className: `${kind}-icon`, textContent: "+" }),
-    el("span", { className: `${kind}-name`, textContent: "New list" }));
-  add.addEventListener("click", () => openLook(null));
-  $("groups").replaceChildren(
-    ...groups(lists.filter((list) => !list.hidden)).map(({ title, lists: members, named }) => el("section",
-      { className: "group" }, title ? el("h2", {}, named ? renameButton(title) : title) : "",
-      el("div", { className: layout }, ...members.map(make)))),
-    el("div", { className: `group ${layout}` }, add));
+  $("no-lists").hidden = lists.length > 0;
+  $("groups").replaceChildren(...groups(lists.filter((list) => !list.hidden)).map(({ title, lists: members, named }) => {
+    const section = el("section", { className: "group" }, title ? el("h2", {}, named ? renameButton(title) : title) : "",
+      el("div", { className: layout }, ...members.map((list) => draggable(make(list), list))));
+    // With categories, each section, "Other" too, takes a dropped list.
+    if (title) section.dataset.category = named ? title : "";
+    return section;
+  }));
   $("hidden-lists").hidden = !hidden.length;
   $("hidden-summary").textContent = `Hidden lists (${hidden.length})`;
   $("hidden-group").replaceChildren(el("div", { className: layout }, ...hidden.map(make)));
+}
+
+// Drag a list onto another section to change its category. A mouse drags as soon as it moves. A finger
+// holds still first, so a swipe still scrolls the page.
+const HOLD_MS = 400;
+const SLOP_PX = 8;
+const EDGE_PX = 60;
+
+function draggable(card, list) {
+  // A link is natively draggable, and that native drag would cancel this one.
+  card.draggable = false;
+  card.addEventListener("pointerdown", (event) => pressCard(event, card, list));
+  card.addEventListener("contextmenu", (event) => event.preventDefault());
+  card.addEventListener("click", (event) => {
+    if (dropped) event.preventDefault();
+  });
+  return card;
+}
+
+function pressCard(event, card, list) {
+  if (event.button !== 0 || !$("groups").querySelector("[data-category]")) return;
+  const mouse = event.pointerType === "mouse";
+  const start = { x: event.clientX, y: event.clientY };
+  let ghost = null;
+  let target = null;
+  const begin = () => {
+    const box = card.getBoundingClientRect();
+    ghost = card.cloneNode(true);
+    ghost.classList.add("ghost");
+    Object.assign(ghost.style, { left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px` });
+    document.body.append(ghost);
+    card.classList.add("dragging");
+    busy++;
+    if (!$("groups").querySelector('[data-category=""]')) {
+      const zone = el("section", { className: "group", id: "other-zone" }, el("h2", { textContent: "Other" }),
+        el("div", { className: "zone", textContent: "No category" }));
+      zone.dataset.category = "";
+      $("groups").append(zone);
+    }
+    navigator.vibrate?.(10);
+  };
+  const hold = mouse ? null : setTimeout(begin, HOLD_MS);
+  const move = (moveEvent) => {
+    if (!ghost) {
+      if (Math.hypot(moveEvent.clientX - start.x, moveEvent.clientY - start.y) <= SLOP_PX) return;
+      // A finger that moves before the hold scrolls the page instead.
+      if (!mouse) return end();
+      begin();
+    }
+    ghost.style.translate = `${moveEvent.clientX - start.x}px ${moveEvent.clientY - start.y}px`;
+    // The drag blocks normal scrolling, so near the top or bottom edge the page scrolls itself.
+    if (moveEvent.clientY > innerHeight - EDGE_PX) scrollBy(0, 12);
+    else if (moveEvent.clientY < EDGE_PX) scrollBy(0, -12);
+    const under = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest("[data-category]");
+    if (under !== target) {
+      target?.classList.remove("drop");
+      target = under;
+      target?.classList.add("drop");
+    }
+  };
+  const blockScroll = (touchEvent) => {
+    if (ghost) touchEvent.preventDefault();
+  };
+  const end = (upEvent) => {
+    clearTimeout(hold);
+    removeEventListener("pointermove", move);
+    removeEventListener("pointerup", end);
+    removeEventListener("pointercancel", end);
+    removeEventListener("touchmove", blockScroll);
+    if (!ghost) return;
+    ghost.remove();
+    card.classList.remove("dragging");
+    target?.classList.remove("drop");
+    $("other-zone")?.remove();
+    busy--;
+    dropped = true;
+    setTimeout(() => { dropped = false; });
+    const category = upEvent?.type === "pointerup" ? target?.dataset.category : undefined;
+    if (category !== undefined && category.toLocaleLowerCase() !== list.category.toLocaleLowerCase()) {
+      moveToCategory(list, category);
+    }
+  };
+  addEventListener("pointermove", move);
+  addEventListener("pointerup", end);
+  addEventListener("pointercancel", end);
+  addEventListener("touchmove", blockScroll, { passive: false });
+}
+
+async function moveToCategory(list, category) {
+  busy++;
+  list.category = category;
+  render();
+  try {
+    await send("PUT", "api/look", { entity_id: list.entity_id, category });
+    setStatus(`Moved ${splitName(list.name).label} to ${category || "Other"}.`);
+  } catch (error) {
+    setStatus(error.message, true);
+  } finally {
+    busy--;
+  }
+  refresh();
 }
 
 function itemRow(item) {
@@ -554,7 +661,7 @@ function render() {
   $("title").textContent = list ? list.name : "Lists";
   document.title = list ? list.name : "Lists";
   for (const id of ["back", "menu", "list"]) $(id).hidden = !list;
-  for (const id of ["home", "settings"]) $(id).hidden = !!list;
+  for (const id of ["home", "settings", "new-list"]) $(id).hidden = !!list;
   if (list) renderList(list);
   else renderHome();
 }
@@ -797,6 +904,8 @@ function applySettings() {
   document.documentElement.dataset.theme = settings.theme;
   document.documentElement.dataset.text = settings.text;
 }
+
+$("new-list").addEventListener("click", () => openLook(null));
 
 $("settings").addEventListener("click", () => {
   for (const radio of $("settings-form").elements) radio.checked = settings[radio.name] === radio.value;

@@ -46,7 +46,8 @@ Home Assistant cannot open an app page at sign-in, so the person opens Home Assi
 
 | To | Do this |
 |---|---|
-| Add a store list | Tap **New list**. Type the name, pick a category and a color, then tap **Create**. |
+| Add a store list | Tap **+** at the top right of the Lists page. Type the name, pick a category and a color, then tap **Create**. |
+| Move a list to another section | Drag it onto the section. On a phone, hold the list still for a moment, then drag. Drop it on **Other** to remove its category. |
 | Pick a color | Tap one of the 16 colors, or the rainbow swatch for any color. The rainbow opens the device's color picker. On a light color, the list's text turns dark. |
 | Give a list an icon | Put an emoji in its name, for example "🛒 Grocery". The first emoji in the name is the icon, and the page shows the name without it. A list without an emoji shows its first letter. On a phone, use the emoji keyboard. On a computer, put the cursor where the emoji goes, then select **😀** next to the name to search all emoji. A name can have more than one emoji, for example "🛒 Grocery 🥕"; only the first one is the icon. |
 | Change settings | Tap the settings button at the top right of the Lists page. **Layout**: tiles or rows. **Item order**: as added, or A–Z (only on this page; Home Assistant keeps the added order). **Text size**: normal or large. **Theme**: follow the device, light, or dark. Each person keeps their own settings on all their devices. |
