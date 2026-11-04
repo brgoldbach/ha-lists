@@ -46,7 +46,7 @@ Home Assistant cannot open an app page at sign-in, so the person opens Home Assi
 
 | To | Do this |
 |---|---|
-| Add a store list | Tap **New list**. Type the name, pick a category, an icon, and a color, then tap **Create**. |
+| Add a store list | Tap **New list**. Type the name, pick a category, an icon, and a color, then tap **Create**. For an icon that is not in the grid, type any emoji in the box under it. |
 | Show lists as rows or tiles | Tap the layout button at the top right of the Lists page. Each person keeps their own choice on all their devices. |
 | Put lists in sections | Give each list a category, for example Stores or Projects. Type a new category, or tap an existing one under the box. The Lists page shows a section for each category in name order. Lists without a category show last, under **Other**. If no list has a category, the page shows no sections. |
 | Add an item | Open the list. Type in **Add an item**, then tap **+** or press Enter. The box stays open for the next item. |

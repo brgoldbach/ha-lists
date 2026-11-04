@@ -33,7 +33,7 @@ HA_TIMEOUT = 10
 ENTITY_PATTERN = re.compile(r"todo\.[a-z0-9_]+")
 NAME_MAX = 40
 ITEM_MAX = 200
-ICON_MAX = 8  # characters: one emoji can be several code points
+ICON_MAX = 16  # code points: one emoji, for example a couple with skin tones, can take 10
 CATEGORY_MAX = 30
 # Same names as the color classes on the page.
 COLORS = ["teal", "blue", "indigo", "purple", "pink", "red", "orange", "amber", "green", "slate"]

@@ -27,12 +27,16 @@ class ValidateLookTest(unittest.TestCase):
         self.assertEqual(validate_look({"icon": " 🔨 ", "category": "  Home   stores ", "hidden": True}, LOOK),
                          {"icon": "🔨", "color": "teal", "category": "Home stores", "hidden": True})
 
+    def test_accepts_any_single_emoji(self):
+        couple = "🧑🏻‍❤️‍💋‍🧑🏼"  # 10 code points
+        self.assertEqual(validate_look({"icon": couple}, LOOK)["icon"], couple)
+
     def test_rejects_unknown_color(self):
         with self.assertRaises(BadRequest):
             validate_look({"color": "beige"}, LOOK)
 
     def test_rejects_unknown_field_and_wrong_type(self):
-        for changes in ({"size": 3}, {"hidden": "yes"}, {"icon": ""}, {"icon": "x" * 9}, {"category": None},
+        for changes in ({"size": 3}, {"hidden": "yes"}, {"icon": ""}, {"icon": "x" * 17}, {"category": None},
                         {"category": "x" * 31}, ["icon"]):
             with self.subTest(changes=changes), self.assertRaises(BadRequest):
                 validate_look(changes, LOOK)

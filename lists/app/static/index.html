@@ -223,6 +223,9 @@
     <div id="categories" class="chips"></div>
     <span class="label">Icon</span>
     <div id="icons" class="choices"></div>
+    <label class="field">
+      <input id="look-emoji" maxlength="16" autocomplete="off" placeholder="Or type any emoji" aria-label="Any emoji">
+    </label>
     <span class="label">Color</span>
     <div id="colors" class="choices"></div>
     <p id="look-error" class="error"></p>
@@ -475,8 +478,10 @@ function openLook(list) {
   }));
   $("categories").hidden = !names.length;
   markCategory();
-  $("icons").replaceChildren(...ICONS.map((icon) =>
-    choice("icon", icon, icon === (list?.icon ?? ICONS[0]), el("span", { textContent: icon }))));
+  const icon = list?.icon ?? ICONS[0];
+  $("icons").replaceChildren(...ICONS.map((option) =>
+    choice("icon", option, option === icon, el("span", { textContent: option }))));
+  $("look-emoji").value = ICONS.includes(icon) ? "" : icon;
   $("colors").replaceChildren(...COLORS.map((name) =>
     choice("color", name, name === color, el("span", { className: `swatch c-${name}` }))));
   $("look-dialog").className = `c-${color}`;
@@ -490,13 +495,26 @@ function markCategory() {
   }
 }
 
+// The first character as a person sees it, so a typed word or a second emoji does not become the icon.
+function firstEmoji(text) {
+  return [...new Intl.Segmenter().segment(text.trim())][0]?.segment ?? "";
+}
+
 $("look-category").addEventListener("input", markCategory);
+// A typed emoji replaces the picked icon, and a picked icon clears the typed emoji.
+$("look-emoji").addEventListener("input", () => {
+  for (const radio of $("icons").querySelectorAll("input")) radio.checked = false;
+});
+$("icons").addEventListener("change", () => { $("look-emoji").value = ""; });
 $("colors").addEventListener("change", (event) => { $("look-dialog").className = `c-${event.target.value}`; });
 
 $("look-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.target);
-  const look = { icon: form.get("icon"), color: form.get("color"), category: form.get("category") };
+  // With the emoji box cleared and no icon picked, the list keeps the icon it had.
+  const icon = firstEmoji($("look-emoji").value) || form.get("icon")
+    || (lists.find((list) => list.entity_id === lookFor)?.icon ?? ICONS[0]);
+  const look = { icon, color: form.get("color"), category: form.get("category") };
   const label = $("look-save").textContent;
   $("look-save").disabled = true;
   $("look-save").textContent = lookFor ? "Saving…" : "Creating…";
