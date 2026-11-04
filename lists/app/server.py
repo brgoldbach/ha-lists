@@ -2,15 +2,18 @@
 
 The app keeps no items. Each list is a `todo` entity in Home Assistant, and each change goes
 through Home Assistant, so this page and the stock To-do page always show the same lists.
-The app stores only the look of each list (icon, color, category, and whether the page hides it),
+The app stores only the look of each list (color, category, and whether the page hides it),
 and the layout each person picked.
 
 Related Documentation: DOCS.md.
 """
 
+import base64
 import json
 import os
 import re
+import socket
+import struct
 import threading
 import time
 import zlib
@@ -34,16 +37,16 @@ PORT = int(os.environ.get("PORT", 8099))
 # That lets a non-admin person create and delete lists through this app.
 HA_URL = os.environ.get("HA_URL", "http://supervisor/core/api")
 HA_TOKEN = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HA_TOKEN", "")
+# Renaming an entity has no REST call, only a websocket command.
+HA_WS_URL = os.environ.get("HA_WS_URL", "ws://supervisor/core/websocket")
 HA_TIMEOUT = 10
 ENTITY_PATTERN = re.compile(r"todo\.[a-z0-9_]+")
 NAME_MAX = 40
 ITEM_MAX = 200
-ICON_MAX = 16  # code points: one emoji, for example a couple with skin tones, can take 10
 CATEGORY_MAX = 30
 # Same names as the color classes on the page.
 COLORS = ["teal", "blue", "indigo", "purple", "pink", "red", "orange", "amber", "green", "slate"]
-DEFAULT_ICON = "📝"
-LOOK_FIELDS = {"icon": str, "color": str, "category": str, "hidden": bool}
+LOOK_FIELDS = {"color": str, "category": str, "hidden": bool}
 # The first one is the default.
 LAYOUTS = ["tiles", "rows"]
 # A list is deletable here only if it is a Local To-do list: its config entry holds that one list.
@@ -90,8 +93,7 @@ def load_looks():
 
 def default_look(entity_id):
     # A list made on another page gets a stable color from its entity ID, so new tiles differ without setup.
-    return {"icon": DEFAULT_ICON, "color": COLORS[zlib.crc32(entity_id.encode()) % len(COLORS)], "category": "",
-            "hidden": False}
+    return {"color": COLORS[zlib.crc32(entity_id.encode()) % len(COLORS)], "category": "", "hidden": False}
 
 
 def validate_look(changes, current):
@@ -100,9 +102,8 @@ def validate_look(changes, current):
             or not all(isinstance(value, LOOK_FIELDS[key]) for key, value in changes.items())):
         raise BadRequest("Invalid look.")
     look = {**current, **changes}
-    look["icon"] = look["icon"].strip()
     look["category"] = " ".join(look["category"].split())
-    if look["color"] not in COLORS or not 0 < len(look["icon"]) <= ICON_MAX:
+    if look["color"] not in COLORS:
         raise BadRequest("Invalid look.")
     if len(look["category"]) > CATEGORY_MAX:
         raise BadRequest(f"A category can have at most {CATEGORY_MAX} characters.")
@@ -110,11 +111,10 @@ def validate_look(changes, current):
 
 
 def page_lists(todos, looks):
-    """Return `todos` as the page shows them: with each list's look, sorted by name."""
-    return sorted(({"entity_id": todo["entity_id"], "name": todo["name"], "open": todo["open"],
-                    "deletable": todo["entry_id"] is not None,
-                    **default_look(todo["entity_id"]), **looks.get(todo["entity_id"], {})} for todo in todos),
-                  key=lambda todo: todo["name"].casefold())
+    """Return `todos` as the page shows them, with each list's look. The page sorts them."""
+    return [{"entity_id": todo["entity_id"], "name": todo["name"], "open": todo["open"],
+             "deletable": todo["entry_id"] is not None, **default_look(todo["entity_id"]),
+             **looks.get(todo["entity_id"], {})} for todo in todos]
 
 
 def rename_category(looks, old, new):
@@ -128,12 +128,17 @@ def rename_category(looks, old, new):
 
 
 def clean_name(name, todos):
-    """Return the new list name `name`, trimmed. Reject blanks, long names, and names in use."""
+    """Return the list name `name`, trimmed. Reject blanks, long names, and names that `todos` use.
+
+    A name needs a letter or a number: Home Assistant drops emoji from entity IDs, so "🛒" alone has none.
+    """
     if not isinstance(name, str) or not name.strip():
         raise BadRequest("Enter a name.")
     name = " ".join(name.split())
     if len(name) > NAME_MAX:
         raise BadRequest(f"A name can have at most {NAME_MAX} characters.")
+    if not any(character.isalnum() for character in name):
+        raise BadRequest("A name needs a letter or a number.")
     if name.casefold() in {todo["name"].casefold() for todo in todos}:
         raise BadRequest(f"{name} already exists.")
     return name
@@ -174,6 +179,61 @@ def ha(method, path, body=None):
     return json.loads(text) if is_json else text
 
 
+def send_frame(connection, message):
+    # A client masks every frame (RFC 6455, section 5.3). Commands stay far below the 64 KiB of a 16-bit length.
+    data = json.dumps(message).encode()
+    mask = os.urandom(4)
+    length = struct.pack("!B", 0x80 | len(data)) if len(data) < 126 else struct.pack("!BH", 0x80 | 126, len(data))
+    connection.sendall(b"\x81" + length + mask + bytes(byte ^ mask[index % 4] for index, byte in enumerate(data)))
+
+
+def receive_frame(stream):
+    """Return the next text message from the server. Join fragments, and skip pings and pongs."""
+    message = b""
+    while True:
+        first, second = stream.read(2)
+        length = second & 0x7F
+        if length == 126:
+            length = struct.unpack("!H", stream.read(2))[0]
+        elif length == 127:
+            length = struct.unpack("!Q", stream.read(8))[0]
+        payload = stream.read(length)
+        opcode = first & 0x0F
+        if opcode == 0x8:
+            raise HomeAssistantError("Home Assistant closed the connection.")
+        if opcode in (0x0, 0x1):
+            message += payload
+            if first & 0x80:
+                return json.loads(message)
+
+
+def ha_command(command):
+    """Run one command on the Home Assistant websocket API. Return its result."""
+    url = urlsplit(HA_WS_URL)
+    try:
+        with (socket.create_connection((url.hostname, url.port or 80), timeout=HA_TIMEOUT) as connection,
+              connection.makefile("rb") as stream):
+            key = base64.b64encode(os.urandom(16)).decode()
+            connection.sendall(f"GET {url.path} HTTP/1.1\r\nHost: {url.netloc}\r\nUpgrade: websocket\r\n"
+                               f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n"
+                               .encode())
+            if b" 101 " not in stream.readline():
+                raise HomeAssistantError("Home Assistant refused the websocket.")
+            while stream.readline() not in (b"\r\n", b""):
+                pass
+            receive_frame(stream)  # auth_required
+            send_frame(connection, {"type": "auth", "access_token": HA_TOKEN})
+            if receive_frame(stream).get("type") != "auth_ok":
+                raise HomeAssistantError("Home Assistant refused the app's token.")
+            send_frame(connection, {"id": 1, **command})
+            reply = receive_frame(stream)
+    except (OSError, ValueError):
+        raise HomeAssistantError("Cannot reach Home Assistant.")
+    if not reply.get("success"):
+        raise HomeAssistantError(f"Home Assistant: {reply.get('error', {}).get('message', 'the command failed')}")
+    return reply["result"]
+
+
 def fetch_lists():
     """Return each to-do list as {"entity_id", "name", "open", "entry_id"}.
 
@@ -196,6 +256,9 @@ def create_list(name):
     """Create a Local To-do list named `name`. Return it once its entity exists."""
     flow = ha("POST", "config/config_entries/flow", {"handler": "local_todo"})
     result = ha("POST", f"config/config_entries/flow/{flow['flow_id']}", {"todo_list_name": name})
+    if result.get("reason") == "already_configured":
+        # Home Assistant compares names without emoji and punctuation, so "🛒 Grocery" clashes with "Grocery".
+        raise BadRequest("A list with nearly the same name already exists.")
     if result.get("type") != "create_entry":
         raise BadRequest(f"Home Assistant did not create the list ({result.get('reason', result.get('type'))}).")
     entry_id = result["result"]["entry_id"]
@@ -233,7 +296,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         self.route({"/api/lists": self.post_list, "/api/lists/delete": self.post_delete_list,
-                    "/api/categories/rename": self.post_rename_category, "/api/items": self.post_item,
+                    "/api/lists/rename": self.post_rename_list, "/api/categories/rename": self.post_rename_category, "/api/items": self.post_item,
                     "/api/items/delete": self.post_delete_item, "/api/items/clear": self.post_clear_items})
 
     def route(self, routes):
@@ -297,13 +360,23 @@ class Handler(BaseHTTPRequestHandler):
         body = self.read_json()
         with save_lock:
             name = clean_name(body.get("name"), fetch_lists())
-            changes = {key: body[key] for key in ("icon", "color", "category") if key in body}
+            changes = {key: body[key] for key in ("color", "category") if key in body}
             look = validate_look(changes, default_look("todo.new"))
             todo = create_list(name)
             looks = load_looks()
             looks[todo["entity_id"]] = look
             save_json(LOOKS_FILE, looks)
         self.send_json(200, page_lists([todo], looks)[0])
+
+    def post_rename_list(self, query):
+        body = self.read_json()
+        entity_id = entity_param(body.get("entity_id"))
+        todos = fetch_lists()
+        find_list(todos, entity_id)
+        name = clean_name(body.get("name"), [todo for todo in todos if todo["entity_id"] != entity_id])
+        # The same change as renaming the entity in Home Assistant's settings. The entity ID stays.
+        ha_command({"type": "config/entity_registry/update", "entity_id": entity_id, "name": name})
+        self.send_json(200, {"entity_id": entity_id, "name": name})
 
     def post_delete_list(self, query):
         entity_id = entity_param(self.read_json().get("entity_id"))

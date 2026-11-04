@@ -8,8 +8,8 @@ A Home Assistant app for shared shopping lists, one for each store. It adds a **
 
 - Each list is a Local To-do `todo` entity. The stock To-do lists page, automations, and voice assistants use the same lists.
 - Changes on either page show on the other within 3 seconds.
-- Any household member creates and deletes lists, also without an admin account.
-- Large touch targets, an icon and a color for each list, light and dark mode.
+- Any household member creates, renames, and deletes lists, also without an admin account.
+- Large touch targets, an emoji icon from the list's name, a color for each list, light and dark mode.
 - Categories put lists in sections. Each person picks tiles or rows.
 
 ## Install
@@ -22,11 +22,11 @@ The app's **Documentation** tab covers use and setup. The same text is in [lists
 
 ## Development
 
-The app is a Python standard-library server. Without the Supervisor, it accepts any client and calls the Home Assistant API at `HA_URL` with the token in `HA_TOKEN`. Set `HA_TOKEN` to a long-lived access token of an admin user first, because creating and deleting lists needs admin rights.
+The app is a Python standard-library server. Without the Supervisor, it accepts any client and calls the Home Assistant REST API at `HA_URL` and the websocket API at `HA_WS_URL`, with the token in `HA_TOKEN`. Set `HA_TOKEN` to a long-lived access token of an admin user first, because creating, renaming, and deleting lists needs admin rights.
 
 ```bash
 docker build -t ha-lists lists
-docker run --rm -p 8099:8099 -e HA_URL=http://homeassistant.local:8123/api -e HA_TOKEN -v lists-data:/data ha-lists
+docker run --rm -p 8099:8099 -e HA_URL=http://homeassistant.local:8123/api -e HA_WS_URL=ws://homeassistant.local:8123/api/websocket -e HA_TOKEN -v lists-data:/data ha-lists
 ```
 
 Run the unit tests inside the image. They use a fake Home Assistant API:

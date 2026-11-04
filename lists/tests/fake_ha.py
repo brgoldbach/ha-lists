@@ -1,5 +1,8 @@
-"""A fake Home Assistant REST API: the to-do lists, the Local To-do config flow, and the todo actions."""
+"""A fake Home Assistant API: the to-do lists, the Local To-do config flow, the todo actions, and the
+websocket command that renames an entity."""
 
+import base64
+import hashlib
 import json
 import re
 import threading
@@ -8,6 +11,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
 TOKEN = "test-token"
+# RFC 6455, section 1.3: the server proves the upgrade with this suffix.
+WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 
 def slugify(name):
@@ -26,6 +31,7 @@ class FakeHomeAssistant:
         self.flows = set()
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), self.handler())
         self.url = f"http://127.0.0.1:{self.server.server_port}/api"
+        self.ws_url = f"ws://127.0.0.1:{self.server.server_port}/api/websocket"
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
     def close(self):
@@ -59,6 +65,13 @@ class FakeHomeAssistant:
                 return {"require_restart": False}
         raise KeyError("Invalid entry specified")
 
+    def ws_command(self, command):
+        todo = self.lists.get(command.get("entity_id"))
+        if command.get("type") != "config/entity_registry/update" or not todo:
+            return {"success": False, "error": {"code": "not_found", "message": "Entity not found"}}
+        todo["name"] = command["name"]
+        return {"success": True, "result": {"entity_entry": {"entity_id": command["entity_id"], "name": todo["name"]}}}
+
     def todo_action(self, service, data, return_response):
         todo = self.lists.get(data.get("entity_id"))
         if not todo:
@@ -84,6 +97,37 @@ class FakeHomeAssistant:
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path != "/api/websocket" or self.headers.get("Upgrade") != "websocket":
+                    return self.send(404, {"message": "Not found"})
+                key = self.headers["Sec-WebSocket-Key"] + WEBSOCKET_GUID
+                self.send_response(101)
+                self.send_header("Upgrade", "websocket")
+                self.send_header("Connection", "Upgrade")
+                self.send_header("Sec-WebSocket-Accept", base64.b64encode(hashlib.sha1(key.encode()).digest()).decode())
+                self.end_headers()
+                self.close_connection = True
+                self.write_frame({"type": "auth_required"})
+                if self.read_frame().get("access_token") != TOKEN:
+                    return self.write_frame({"type": "auth_invalid"})
+                self.write_frame({"type": "auth_ok"})
+                command = self.read_frame()
+                self.write_frame({"id": command["id"], "type": "result", **fake.ws_command(command)})
+
+            def read_frame(self):
+                # A client masks every frame; the commands here stay below 64 KiB.
+                first, second = self.rfile.read(2)
+                length = second & 0x7F
+                if length == 126:
+                    length = int.from_bytes(self.rfile.read(2), "big")
+                mask = self.rfile.read(4)
+                return json.loads(bytes(byte ^ mask[index % 4] for index, byte in enumerate(self.rfile.read(length))))
+
+            def write_frame(self, message):
+                data = json.dumps(message).encode()
+                length = bytes([len(data)]) if len(data) < 126 else bytes([126]) + len(data).to_bytes(2, "big")
+                self.wfile.write(b"\x81" + length + data)
+
             def do_POST(self):
                 self.answer()
 

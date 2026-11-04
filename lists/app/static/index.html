@@ -72,6 +72,8 @@
   }
   .tile:active { transform: scale(0.97); }
   .tile-icon { font-size: 38px; line-height: 1; }
+  .tile-icon.letter { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px;
+    background: rgb(255 255 255 / 0.22); font-size: 24px; font-weight: 800; }
   .tile-name { margin-top: auto; padding-top: 14px; font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
   .tile-count { font-size: 14px; opacity: 0.92; }
   .tile.new { align-items: center; justify-content: center; gap: 6px; background: none; box-shadow: none;
@@ -89,6 +91,7 @@
   .row:active { background: var(--bg); }
   .row-icon { flex: none; display: grid; place-items: center; width: 42px; height: 42px; border-radius: 13px;
     font-size: 22px; background: linear-gradient(135deg, var(--c1), var(--c2)); }
+  .row-icon.letter { color: #fff; font-size: 20px; font-weight: 800; }
   .row-name { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
   .row-count { flex: none; color: var(--muted); font-size: 15px; }
   .row-count::after { content: "›"; margin-left: 10px; font-size: 24px; vertical-align: -2px; }
@@ -152,11 +155,11 @@
   .choice .swatch { background: linear-gradient(135deg, var(--c1), var(--c2)); }
   .choice input:checked + span { border-color: var(--text); }
   .choice input:focus-visible + span { outline: 2px solid var(--c1); outline-offset: 2px; }
-  .emoji-row { display: flex; gap: 8px; margin-bottom: 16px; }
-  .emoji-row input { flex: 1; min-width: 0; height: 48px; padding: 0 14px; border: 1px solid var(--line);
-    border-radius: 14px; background: var(--bg); color: var(--text); font: inherit; font-size: 17px; }
-  .emoji-row button { flex: none; padding: 0 14px; border: 1px solid var(--line); border-radius: 14px;
-    background: none; font-weight: 600; }
+  .name-row { display: flex; gap: 8px; }
+  .name-row input { flex: 1; min-width: 0; }
+  .name-row button { flex: none; width: 48px; height: 48px; border: 1px solid var(--line); border-radius: 14px;
+    background: var(--bg); font-size: 22px; }
+  .field .note { margin-top: 6px; }
   emoji-picker {
     width: 100%; height: min(420px, 60vh); margin-bottom: 8px; --num-columns: 7; --emoji-size: 1.6rem;
     --background: var(--card); --border-color: var(--line); --border-radius: 14px; --indicator-color: var(--c1);
@@ -227,21 +230,19 @@
 <dialog id="look-dialog">
   <form id="look-form">
     <h2 id="look-title"></h2>
-    <label id="name-field" class="field">
+    <label class="field">
       <span class="label">Name</span>
-      <input id="look-name" name="name" maxlength="40" autocomplete="off" placeholder="For example, Hardware store">
+      <span class="name-row">
+        <input id="look-name" name="name" maxlength="40" autocomplete="off" required placeholder="For example, 🛒 Grocery">
+        <button id="name-emoji" type="button" aria-label="Pick an emoji" hidden>😀</button>
+      </span>
+      <span class="note">The first emoji in the name is the list's icon.</span>
     </label>
     <label class="field">
       <span class="label">Category</span>
       <input id="look-category" name="category" maxlength="30" autocomplete="off" placeholder="None">
     </label>
     <div id="categories" class="chips"></div>
-    <span class="label">Icon</span>
-    <div id="icons" class="choices"></div>
-    <div class="emoji-row">
-      <input id="look-emoji" maxlength="16" autocomplete="off" placeholder="Or type any emoji" aria-label="Any emoji">
-      <button id="all-emoji" type="button">All emoji</button>
-    </div>
     <span class="label">Color</span>
     <div id="colors" class="choices"></div>
     <p id="look-error" class="error"></p>
@@ -301,8 +302,6 @@ const $ = (id) => document.getElementById(id);
 const JSON_HEADERS = { "Content-Type": "application/json" };
 // Each open page asks for changes this often, so edits on another phone or page show up here.
 const POLL_MS = 3000;
-const ICONS = ["🛒", "🥦", "🍎", "🍞", "🥩", "🧀", "☕", "🍷", "🔨", "🔧", "🪛", "🪚",
-  "🎨", "💡", "🌱", "🏡", "🧽", "🧴", "💊", "🐾", "👕", "🎁", "📦", "📝"];
 // Same names as COLORS in server.py.
 const COLORS = ["teal", "blue", "indigo", "purple", "pink", "red", "orange", "amber", "green", "slate"];
 let lists = [];
@@ -351,24 +350,42 @@ function countLabel(list) {
   return list.open === 1 ? "1 item" : `${list.open} items`;
 }
 
+// The first emoji in a list's name is its icon. The label is the name without that emoji.
+function splitName(name) {
+  for (const { segment, index } of new Intl.Segmenter().segment(name)) {
+    if (/\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(segment)) {
+      const label = `${name.slice(0, index)} ${name.slice(index + segment.length)}`.replace(/\s+/g, " ").trim();
+      return { icon: segment, label: label || name };
+    }
+  }
+  return { icon: "", label: name };
+}
+
+const byLabel = (a, b) => splitName(a.name).label.localeCompare(splitName(b.name).label);
+
+// A list without an emoji shows the first letter of its name instead.
+function badge(list, className) {
+  const { icon, label } = splitName(list.name);
+  return el("span", { className: icon ? className : `${className} letter`,
+    textContent: icon || [...label][0].toLocaleUpperCase() });
+}
+
 function tile(list) {
-  return el("a", { className: `tile c-${list.color}`, href: `#${list.entity_id}` },
-    el("span", { className: "tile-icon", textContent: list.icon }),
-    el("span", { className: "tile-name", textContent: list.name }),
+  return el("a", { className: `tile c-${list.color}`, href: `#${list.entity_id}` }, badge(list, "tile-icon"),
+    el("span", { className: "tile-name", textContent: splitName(list.name).label }),
     el("span", { className: "tile-count", textContent: countLabel(list) }));
 }
 
 function row(list) {
-  return el("a", { className: `row c-${list.color}`, href: `#${list.entity_id}` },
-    el("span", { className: "row-icon", textContent: list.icon }),
-    el("span", { className: "row-name", textContent: list.name }),
+  return el("a", { className: `row c-${list.color}`, href: `#${list.entity_id}` }, badge(list, "row-icon"),
+    el("span", { className: "row-name", textContent: splitName(list.name).label }),
     el("span", { className: "row-count", textContent: countLabel(list) }));
 }
 
 // Categories in name order, then the lists without one. Case does not split a category.
 function groups(shown) {
   const byKey = new Map();
-  for (const list of shown) {
+  for (const list of [...shown].sort(byLabel)) {
     const key = list.category.toLocaleLowerCase();
     if (!byKey.has(key)) byKey.set(key, { title: list.category, lists: [], named: true });
     byKey.get(key).lists.push(list);
@@ -438,7 +455,7 @@ function renderList(list) {
   $("open-items").replaceChildren(...open.map(itemRow));
   $("done-items").replaceChildren(...done.map(itemRow));
   $("empty").hidden = open.length > 0;
-  $("empty").dataset.icon = list.icon;
+  $("empty").dataset.icon = splitName(list.name).icon;
   $("empty").textContent = done.length ? "All set." : "Nothing on this list.";
   $("done-head").hidden = !done.length;
   $("done-title").textContent = `Got it · ${done.length}`;
@@ -451,7 +468,7 @@ function render() {
   shown = state;
   document.body.className = list ? `c-${list.color}` : "";
   $("top").classList.toggle("colored", !!list);
-  $("title").textContent = list ? `${list.icon} ${list.name}` : "Lists";
+  $("title").textContent = list ? list.name : "Lists";
   document.title = list ? list.name : "Lists";
   for (const id of ["back", "menu", "list"]) $(id).hidden = !list;
   for (const id of ["home", "layout"]) $(id).hidden = !!list;
@@ -514,11 +531,11 @@ function openLook(list) {
   lookFor = list?.entity_id ?? null;
   const used = new Set(lists.map((other) => other.color));
   const color = list?.color ?? COLORS.find((name) => !used.has(name)) ?? COLORS[0];
-  $("look-title").textContent = list ? `Edit ${list.name}` : "New list";
+  $("look-title").textContent = list ? "Edit list" : "New list";
   $("look-save").textContent = list ? "Save" : "Create";
-  $("name-field").hidden = !!list;
-  $("look-name").value = "";
-  $("look-name").required = !list;
+  $("look-name").value = list?.name ?? "";
+  // Phones and tablets have an emoji keyboard. A mouse means a computer, where emoji are hard to type.
+  $("name-emoji").hidden = !matchMedia("(pointer: fine)").matches;
   $("look-error").textContent = "";
   $("look-category").value = list?.category ?? "";
   const names = categoryNames();
@@ -532,10 +549,6 @@ function openLook(list) {
   }));
   $("categories").hidden = !names.length;
   markCategory();
-  const icon = list?.icon ?? ICONS[0];
-  $("icons").replaceChildren(...ICONS.map((option) =>
-    choice("icon", option, option === icon, el("span", { textContent: option }))));
-  $("look-emoji").value = ICONS.includes(icon) ? "" : icon;
   $("colors").replaceChildren(...COLORS.map((name) =>
     choice("color", name, name === color, el("span", { className: `swatch c-${name}` }))));
   $("look-dialog").className = `c-${color}`;
@@ -549,20 +562,17 @@ function markCategory() {
   }
 }
 
-// The first character as a person sees it, so a typed word or a second emoji does not become the icon.
-function firstEmoji(text) {
-  return [...new Intl.Segmenter().segment(text.trim())][0]?.segment ?? "";
+// Puts the picked emoji at the start of the name, in place of the icon emoji if the name starts with one.
+function setNameEmoji(emoji) {
+  const name = $("look-name").value.trim();
+  const { icon, label } = splitName(name);
+  $("look-name").value = `${emoji} ${icon && name.startsWith(icon) ? label : name}`.trim();
 }
 
 $("look-category").addEventListener("input", markCategory);
-// A typed emoji replaces the picked icon, and a picked icon clears the typed emoji.
-$("look-emoji").addEventListener("input", () => {
-  for (const radio of $("icons").querySelectorAll("input")) radio.checked = false;
-});
-$("icons").addEventListener("change", () => { $("look-emoji").value = ""; });
 
 // The picker and its 440 KB of emoji data load only when someone first opens it.
-$("all-emoji").addEventListener("click", async () => {
+$("name-emoji").addEventListener("click", async () => {
   if (!emojiPicker) {
     try {
       await import("./vendor/emoji-picker-element/picker.js");
@@ -573,8 +583,7 @@ $("all-emoji").addEventListener("click", async () => {
     emojiPicker = el("emoji-picker");
     emojiPicker.dataSource = "vendor/emoji-picker-element-data/en/emojibase/data.json";
     emojiPicker.addEventListener("emoji-click", (event) => {
-      $("look-emoji").value = event.detail.unicode;
-      for (const radio of $("icons").querySelectorAll("input")) radio.checked = false;
+      setNameEmoji(event.detail.unicode);
       $("emoji-dialog").close();
     });
     $("emoji-slot").append(emojiPicker);
@@ -597,15 +606,16 @@ $("colors").addEventListener("change", (event) => { $("look-dialog").className =
 $("look-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.target);
-  // With the emoji box cleared and no icon picked, the list keeps the icon it had.
-  const icon = firstEmoji($("look-emoji").value) || form.get("icon")
-    || (lists.find((list) => list.entity_id === lookFor)?.icon ?? ICONS[0]);
-  const look = { icon, color: form.get("color"), category: form.get("category") };
+  const look = { color: form.get("color"), category: form.get("category") };
   const label = $("look-save").textContent;
   $("look-save").disabled = true;
   $("look-save").textContent = lookFor ? "Saving…" : "Creating…";
   try {
     if (lookFor) {
+      const name = form.get("name").trim();
+      if (name !== lists.find((list) => list.entity_id === lookFor)?.name) {
+        await send("POST", "api/lists/rename", { entity_id: lookFor, name });
+      }
       await send("PUT", "api/look", { entity_id: lookFor, ...look });
     } else {
       const list = await send("POST", "api/lists", { name: form.get("name"), ...look });
