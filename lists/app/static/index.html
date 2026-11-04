@@ -9,7 +9,7 @@
     color-scheme: light;
     --bg: #f3f4f8; --card: #fff; --text: #17181c; --muted: #6b6f7a; --line: #e3e5eb; --danger: #c62828;
     --shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 4px 14px rgb(16 24 40 / 0.08);
-    --c1: #0f9d8a; --c2: #34c3a9; --ink: #fff;
+    --c1: #0f9d8a; --c2: #34c3a9; --ink: #fff; --gold: #ffc83d;
   }
   /* The Theme setting: "device" follows the system, "light" and "dark" override it. */
   @media (prefers-color-scheme: dark) {
@@ -68,7 +68,9 @@
   .top:not(.colored) .round { background: var(--card); box-shadow: var(--shadow); }
   .top:not(.colored) #new-list { color: var(--ink); background: linear-gradient(135deg, var(--c1), var(--c2));
     font-size: 28px; font-weight: 300; }
-  .round svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+  /* Icons are drawn, not typed: a font sets a glyph such as ‹ below the center of the circle. */
+  .round svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round;
+    stroke-linejoin: round; }
 
   .group { margin-bottom: 24px; }
   .group h2, .done-head h2 { margin: 0 4px 10px; font-size: 14px; font-weight: 700; letter-spacing: 0.05em;
@@ -92,6 +94,15 @@
     border-radius: 50%; background: rgb(255 255 255 / 0.13);
   }
   .tile:active { transform: scale(0.97); }
+  /* A gold star marks a favorite: in a tile's top corner, or in a column before a row's count. The shadow keeps
+     the gold visible on a yellow list. */
+  .fav, #star[aria-pressed="true"] { color: var(--gold); text-shadow: 0 1px 2px rgb(0 0 0 / 0.35); }
+  .fav { font-size: 14px; line-height: 1; }
+  /* On a list, the star sits in a light circle, like the star button at the top of an open list. */
+  .tile .fav, .row-fav .fav { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
+    background: rgb(255 255 255 / 0.22); font-size: 17px; }
+  .tile .fav { position: absolute; top: 12px; right: 12px; z-index: 1; }
+  .row-fav { flex: none; width: 30px; }
   .tile-icon { font-size: 38px; line-height: 1; }
   .tile-icon.letter { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px;
     background: rgb(255 255 255 / 0.22); font-size: 24px; font-weight: 800; }
@@ -109,7 +120,8 @@
     font-size: 22px; background: rgb(255 255 255 / 0.22); }
   .row-icon.letter { font-size: 20px; font-weight: 800; }
   .row-name { flex: 1; min-width: 0; font-weight: 700; overflow-wrap: anywhere; }
-  .row-count { flex: none; font-size: 15px; opacity: 0.92; }
+  /* A fixed width keeps the star column straight, whatever the count says. */
+  .row-count { flex: none; min-width: 5.5em; font-size: 15px; text-align: right; opacity: 0.92; }
   .row-count::after { content: "›"; margin-left: 10px; font-size: 24px; vertical-align: -2px; }
   /* A long press must start a drag, not select text or open the phone's link menu. */
   .tile, .row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
@@ -250,13 +262,16 @@
 </head>
 <body>
 <header id="top" class="top">
-  <a id="back" class="round" href="#" aria-label="All lists" hidden>‹</a>
+  <a id="back" class="round" href="#" aria-label="All lists" hidden>
+    <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+  </a>
   <h1 id="title">Lists</h1>
   <button id="new-list" class="round" type="button" aria-label="New list">+</button>
   <button id="settings" class="round" type="button" aria-label="Settings">
     <svg viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/>
       <circle cx="9" cy="17" r="2"/></svg>
   </button>
+  <button id="star" class="round" type="button" hidden></button>
   <button id="menu" class="round" type="button" aria-label="List options" hidden>⋯</button>
 </header>
 
@@ -380,7 +395,6 @@
   <h2 id="menu-title"></h2>
   <div class="menu">
     <button id="menu-look" type="button">Edit list</button>
-    <button id="menu-favorite" type="button"></button>
     <button id="menu-hide" type="button"></button>
     <button id="menu-delete" class="danger" type="button">Delete list</button>
   </div>
@@ -506,25 +520,30 @@ function badge(list, className) {
     textContent: icon || [...label][0].toLocaleUpperCase() });
 }
 
+const isFavorite = (list) => settings.favorites === "show" && favorites.includes(list.entity_id);
+const star = (list) => (isFavorite(list)
+  ? el("span", { className: "fav", textContent: "★", ariaLabel: "Favorite" }) : "");
+
 function tile(list) {
-  return paint(el("a", { className: "tile", href: `#${list.entity_id}` }, badge(list, "tile-icon"),
+  return paint(el("a", { className: "tile", href: `#${list.entity_id}` }, badge(list, "tile-icon"), star(list),
     el("span", { className: "tile-name", textContent: splitName(list.name).label }),
     el("span", { className: "tile-count", textContent: countLabel(list) })), list.color);
 }
 
 function row(list) {
+  // With favorites shown, every row keeps a slot for the star before its count, so the stars line up.
+  const slot = settings.favorites === "show" ? el("span", { className: "row-fav" }, star(list)) : "";
   return paint(el("a", { className: "row", href: `#${list.entity_id}` }, badge(list, "row-icon"),
-    el("span", { className: "row-name", textContent: splitName(list.name).label }),
+    el("span", { className: "row-name", textContent: splitName(list.name).label }), slot,
     el("span", { className: "row-count", textContent: countLabel(list) })), list.color);
 }
 
 // This person's favorites first, if shown, then every category in its saved order, also an empty one, then
 // the lists without one. Case does not split a category.
 function groups(shown) {
-  const starred = (list) => settings.favorites === "show" && favorites.includes(list.entity_id);
   const byKey = new Map(categories.map((name) =>
     [name.toLocaleLowerCase(), { title: name, lists: [], kind: "category" }]));
-  for (const list of [...shown].sort(byRank).filter((list) => !starred(list))) {
+  for (const list of [...shown].sort(byRank).filter((list) => !isFavorite(list))) {
     const key = list.category.toLocaleLowerCase();
     if (!byKey.has(key)) byKey.set(key, { title: list.category, lists: [], kind: "category" });
     byKey.get(key).lists.push(list);
@@ -532,8 +551,8 @@ function groups(shown) {
   const rest = byKey.get("");
   byKey.delete("");
   const sections = [...byKey.values()];
-  const favored = [...shown].sort(byRank).filter(starred);
-  if (favored.length) sections.unshift({ title: "★ Favorites", lists: favored, kind: "favorites" });
+  const favored = [...shown].sort(byRank).filter(isFavorite);
+  if (favored.length) sections.unshift({ title: "Favorites", lists: favored, kind: "favorites" });
   if (rest) sections.push({ title: sections.length ? "Other" : "", lists: rest.lists, kind: "other" });
   return sections;
 }
@@ -566,7 +585,10 @@ function renderHome() {
     // A list dropped on a section takes its category; "Other" has none. Favorites keeps the category.
     if (kind === "category") section.dataset.category = title;
     if (kind === "other" && title) section.dataset.category = "";
-    if (kind === "favorites") section.dataset.favorites = "";
+    if (kind === "favorites") {
+      section.dataset.favorites = "";
+      heading.prepend(el("span", { className: "fav", textContent: "★", ariaHidden: true }));
+    }
     if (kind === "category" && movable) {
       heading.prepend(el("span", { className: "grip", textContent: "⠿", ariaHidden: true }));
       heading.addEventListener("pointerdown", (event) => pressSection(event, section));
@@ -813,6 +835,13 @@ function render() {
   $("title").textContent = list ? list.name : "Lists";
   document.title = list ? list.name : "Lists";
   for (const id of ["back", "menu", "list"]) $(id).hidden = !list;
+  $("star").hidden = !list || settings.favorites === "hide";
+  if (list) {
+    const favorite = favorites.includes(list.entity_id);
+    $("star").textContent = favorite ? "★" : "☆";
+    $("star").ariaLabel = favorite ? "Remove from favorites" : "Add to favorites";
+    $("star").setAttribute("aria-pressed", favorite);
+  }
   for (const id of ["home", "settings", "new-list"]) $(id).hidden = !!list;
   if (list) renderList(list);
   else renderHome();
@@ -1048,8 +1077,6 @@ $("clear").addEventListener("click", () => write(
 $("menu").addEventListener("click", () => {
   const list = currentList();
   $("menu-title").textContent = list.name;
-  $("menu-favorite").hidden = settings.favorites === "hide";
-  $("menu-favorite").textContent = favorites.includes(list.entity_id) ? "Remove from favorites" : "Add to favorites";
   $("menu-hide").textContent = list.hidden ? "Show list" : "Hide list";
   $("menu-delete").hidden = !list.deletable;
   $("menu-note").hidden = list.deletable;
@@ -1061,15 +1088,19 @@ $("menu-look").addEventListener("click", () => {
   openLook(currentList());
 });
 
-$("menu-favorite").addEventListener("click", async () => {
+// The star fills at once and saves in the background.
+$("star").addEventListener("click", async () => {
   const list = currentList();
   const favorite = !favorites.includes(list.entity_id);
-  $("menu-dialog").close();
+  busy++;
+  favorites = favorite ? [...favorites, list.entity_id] : favorites.filter((entityId) => entityId !== list.entity_id);
+  render();
   try {
     favorites = await send("PUT", "api/favorites", { entity_id: list.entity_id, favorite });
-    setStatus(favorite ? `${list.name} is in Favorites.` : `${list.name} left Favorites.`);
   } catch (error) {
     setStatus(error.message, true);
+  } finally {
+    busy--;
   }
   refresh();
 });

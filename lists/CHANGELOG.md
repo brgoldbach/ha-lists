@@ -10,7 +10,8 @@
 - Categories put lists in sections. Drag lists between sections, and drag sections into order. A category stays, also
   with no lists, until you remove it.
 - Hide lists from the page. Drag lists into any order.
-- Favorites: a section at the top for each person, which the settings can hide.
+- Favorites: tap the star next to ⋯ on a list. Favorites show in a section at the top, for each person, and the
+  settings can hide them.
 - Settings for each person, kept on all their devices: tiles or rows, item order, favorites, text size, and theme.
 - Export everything to a JSON file, and import it again.
 - Changes made elsewhere in Home Assistant show within 3 seconds.
