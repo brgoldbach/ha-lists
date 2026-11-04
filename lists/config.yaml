@@ -1,0 +1,14 @@
+name: Lists
+version: "1.0.0"
+slug: lists
+description: Shared shopping lists, one for each store
+url: https://github.com/brgoldbach/ha-lists
+arch:
+  - aarch64
+  - amd64
+init: false
+homeassistant_api: true
+ingress: true
+panel_icon: mdi:cart-outline
+panel_title: Lists
+panel_admin: false

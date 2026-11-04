@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lists</title>
+<style>
+  :root {
+    --bg: #f3f4f8; --card: #fff; --text: #17181c; --muted: #6b6f7a; --line: #e3e5eb; --danger: #c62828;
+    --shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 4px 14px rgb(16 24 40 / 0.08);
+    --c1: #0f9d8a; --c2: #34c3a9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111317; --card: #1b1e24; --text: #eceef2; --muted: #9ba1ad; --line: #2c3038; --danger: #ef5350;
+      --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 16px rgb(0 0 0 / 0.35);
+    }
+  }
+  /* Same names as COLORS in server.py. */
+  .c-teal { --c1: #0f9d8a; --c2: #34c3a9; }
+  .c-blue { --c1: #1d72cf; --c2: #4aa3f0; }
+  .c-indigo { --c1: #4650c0; --c2: #7c84ea; }
+  .c-purple { --c1: #8247c2; --c2: #b07ce4; }
+  .c-pink { --c1: #c93f78; --c2: #ec7aa9; }
+  .c-red { --c1: #cc3d36; --c2: #ef7468; }
+  .c-orange { --c1: #d9661a; --c2: #f59a45; }
+  .c-amber { --c1: #b57b0e; --c2: #e3ab2e; }
+  .c-green { --c1: #3a9137; --c2: #68c15f; }
+  .c-slate { --c1: #4d5a6c; --c2: #7f8ea3; }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text); font: 16px/1.4 system-ui, sans-serif;
+    padding-bottom: env(safe-area-inset-bottom); -webkit-tap-highlight-color: transparent;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  main { max-width: 720px; margin: 0 auto; padding: 4px 16px 32px; }
+
+  .top {
+    position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 10px;
+    max-width: 720px; margin: 0 auto; padding: 20px 16px 14px; background: var(--bg);
+  }
+  .top h1 { flex: 1; min-width: 0; margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .top.colored { max-width: none; margin-bottom: 16px; padding-bottom: 22px; border-radius: 0 0 24px 24px;
+    color: #fff; background: linear-gradient(135deg, var(--c1), var(--c2)); box-shadow: var(--shadow); }
+  .top.colored h1 { font-size: 24px; }
+  .round {
+    flex: none; display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%;
+    background: rgb(255 255 255 / 0.2); color: inherit; font-size: 22px; line-height: 1; text-decoration: none;
+  }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .tile {
+    position: relative; overflow: hidden; display: flex; flex-direction: column; min-height: 136px; padding: 16px;
+    border: 0; border-radius: 22px; color: #fff; text-align: left; text-decoration: none;
+    background: linear-gradient(135deg, var(--c1), var(--c2)); box-shadow: var(--shadow); transition: transform 0.12s;
+  }
+  .tile::after {
+    content: ""; position: absolute; top: -28px; right: -28px; width: 100px; height: 100px;
+    border-radius: 50%; background: rgb(255 255 255 / 0.13);
+  }
+  .tile:active { transform: scale(0.97); }
+  .tile-icon { font-size: 38px; line-height: 1; }
+  .tile-name { margin-top: auto; padding-top: 14px; font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
+  .tile-count { font-size: 14px; opacity: 0.92; }
+  .tile.new { align-items: center; justify-content: center; gap: 6px; background: none; box-shadow: none;
+    border: 2px dashed var(--line); color: var(--muted); }
+  .tile.new::after { content: none; }
+  .tile.new .tile-icon { font-size: 34px; font-weight: 300; }
+  .tile.new .tile-name { margin: 0; padding: 0; font-size: 16px; font-weight: 600; }
+  details { margin-top: 28px; }
+  summary { color: var(--muted); cursor: pointer; margin-bottom: 12px; }
+  #hidden-tiles .tile { min-height: 96px; opacity: 0.75; }
+
+  .add { display: flex; gap: 8px; margin-bottom: 18px; }
+  .add input {
+    flex: 1; min-width: 0; height: 52px; padding: 0 16px; border: 1px solid var(--line); border-radius: 16px;
+    background: var(--card); color: var(--text); font: inherit; font-size: 17px; box-shadow: var(--shadow);
+  }
+  .add input:focus { outline: 2px solid var(--c1); outline-offset: -1px; }
+  .add button { flex: none; width: 52px; height: 52px; border: 0; border-radius: 16px; color: #fff; font-size: 30px;
+    line-height: 1; background: linear-gradient(135deg, var(--c1), var(--c2)); box-shadow: var(--shadow); }
+
+  .items { list-style: none; margin: 0; padding: 0; overflow: hidden; border-radius: 18px;
+    background: var(--card); box-shadow: var(--shadow); }
+  .items:empty { display: none; }
+  .items li { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+  .items li:last-child { border-bottom: 0; }
+  .item {
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; min-height: 58px; padding: 10px 4px 10px 16px;
+    border: 0; background: none; font-size: 17px; text-align: left;
+  }
+  .item:disabled { opacity: 0.6; cursor: default; }
+  .check { flex: none; display: grid; place-items: center; width: 26px; height: 26px;
+    border: 2px solid var(--c1); border-radius: 50%; color: #fff; font-size: 15px; font-weight: 700; }
+  .item[aria-pressed="true"] .check { background: var(--c1); }
+  .item[aria-pressed="true"] .check::after { content: "✓"; }
+  .item[aria-pressed="true"] .text { color: var(--muted); text-decoration: line-through; }
+  .text { min-width: 0; overflow-wrap: anywhere; }
+  .note { display: block; font-size: 13px; color: var(--muted); }
+  .remove { flex: none; width: 48px; height: 58px; border: 0; background: none; color: var(--muted); font-size: 24px; }
+  .empty { margin: 40px 0; text-align: center; color: var(--muted); }
+  .empty::before { content: attr(data-icon); display: block; margin-bottom: 8px; font-size: 48px; }
+  .done-head { display: flex; align-items: center; justify-content: space-between; margin: 26px 4px 10px; }
+  .done-head h2 { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--muted); }
+  .link { border: 0; background: none; padding: 4px 0; color: var(--c1); font-weight: 600; }
+
+  dialog {
+    width: min(28rem, calc(100vw - 24px)); padding: 22px; border: 0; border-radius: 22px;
+    background: var(--card); color: var(--text); box-shadow: var(--shadow);
+  }
+  dialog::backdrop { background: rgb(0 0 0 / 0.45); }
+  @media (max-width: 480px) { dialog { margin: auto auto 12px; } }
+  dialog h2 { margin: 0 0 16px; font-size: 20px; }
+  .field { display: block; margin-bottom: 16px; }
+  .field input { width: 100%; height: 48px; padding: 0 14px; border: 1px solid var(--line); border-radius: 14px;
+    background: var(--bg); color: var(--text); font: inherit; font-size: 17px; }
+  .label { display: block; margin: 0 0 8px; font-size: 14px; font-weight: 600; color: var(--muted); }
+  .choices { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-bottom: 16px; }
+  .choice { position: relative; }
+  .choice input { position: absolute; opacity: 0; pointer-events: none; }
+  .choice span { display: grid; place-items: center; height: 44px; border: 2px solid transparent; border-radius: 12px;
+    background: var(--bg); font-size: 24px; cursor: pointer; }
+  .choice .swatch { background: linear-gradient(135deg, var(--c1), var(--c2)); }
+  .choice input:checked + span { border-color: var(--text); }
+  .choice input:focus-visible + span { outline: 2px solid var(--c1); outline-offset: 2px; }
+  .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+  .actions button { min-width: 6rem; height: 44px; padding: 0 18px; border: 1px solid var(--line); border-radius: 14px;
+    background: none; font-weight: 600; }
+  .actions .primary { border: 0; color: #fff; background: linear-gradient(135deg, var(--c1), var(--c2)); }
+  .actions .danger { border: 0; color: #fff; background: var(--danger); }
+  .menu button { display: block; width: 100%; padding: 14px 12px; border: 0; border-radius: 12px; background: none;
+    font-size: 17px; text-align: left; }
+  .menu button:hover { background: var(--bg); }
+  .menu .danger, .error { color: var(--danger); }
+  .hint { margin: 8px 12px; color: var(--muted); font-size: 14px; }
+
+  #status {
+    position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+    max-width: calc(100vw - 32px); padding: 10px 16px; border-radius: 14px;
+    background: var(--text); color: var(--bg); font-size: 15px; box-shadow: var(--shadow);
+  }
+  #status:empty { display: none; }
+  #status.error { background: var(--danger); color: #fff; }
+</style>
+</head>
+<body>
+<header id="top" class="top">
+  <a id="back" class="round" href="#" aria-label="All lists" hidden>‹</a>
+  <h1 id="title">Lists</h1>
+  <button id="menu" class="round" type="button" aria-label="List options" hidden>⋯</button>
+</header>
+
+<main>
+  <section id="home">
+    <div id="tiles" class="tiles"></div>
+    <details id="hidden-lists" hidden>
+      <summary id="hidden-summary"></summary>
+      <div id="hidden-tiles" class="tiles"></div>
+    </details>
+  </section>
+
+  <section id="list" hidden>
+    <form id="add-form" class="add">
+      <input id="add-input" placeholder="Add an item" autocomplete="off" enterkeyhint="send" maxlength="200">
+      <button aria-label="Add">+</button>
+    </form>
+    <ul id="open-items" class="items"></ul>
+    <p id="empty" class="empty">Nothing on this list.</p>
+    <div id="done-head" class="done-head">
+      <h2 id="done-title"></h2>
+      <button id="clear" class="link" type="button">Clear</button>
+    </div>
+    <ul id="done-items" class="items"></ul>
+  </section>
+</main>
+
+<dialog id="look-dialog">
+  <form id="look-form">
+    <h2 id="look-title"></h2>
+    <label id="name-field" class="field">
+      <span class="label">Name</span>
+      <input id="look-name" name="name" maxlength="40" autocomplete="off" placeholder="For example, Hardware store">
+    </label>
+    <span class="label">Icon</span>
+    <div id="icons" class="choices"></div>
+    <span class="label">Color</span>
+    <div id="colors" class="choices"></div>
+    <p id="look-error" class="error"></p>
+    <div class="actions">
+      <button type="button" data-close>Cancel</button>
+      <button id="look-save" class="primary"></button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="menu-dialog">
+  <h2 id="menu-title"></h2>
+  <div class="menu">
+    <button id="menu-look" type="button">Icon and color</button>
+    <button id="menu-hide" type="button"></button>
+    <button id="menu-delete" class="danger" type="button">Delete list</button>
+  </div>
+  <p id="menu-note" class="hint">Another integration owns this list. Remove it in Home Assistant settings.</p>
+  <div class="actions"><button type="button" data-close>Close</button></div>
+</dialog>
+
+<dialog id="delete-dialog">
+  <h2 id="delete-title"></h2>
+  <p id="delete-text"></p>
+  <div class="actions">
+    <button type="button" data-close>Cancel</button>
+    <button id="delete-confirm" class="danger" type="button">Delete</button>
+  </div>
+</dialog>
+
+<p id="status" role="status"></p>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const JSON_HEADERS = { "Content-Type": "application/json" };
+// Each open page asks for changes this often, so edits on another phone or page show up here.
+const POLL_MS = 3000;
+const ICONS = ["🛒", "🥦", "🍎", "🍞", "🥩", "🧀", "☕", "🍷", "🔨", "🔧", "🪛", "🪚",
+  "🎨", "💡", "🌱", "🏡", "🧽", "🧴", "💊", "🐾", "👕", "🎁", "📦", "📝"];
+// Same names as COLORS in server.py.
+const COLORS = ["teal", "blue", "indigo", "purple", "pink", "red", "orange", "amber", "green", "slate"];
+let lists = [];
+let items = [];
+// The data of the last render, so a poll that finds no change leaves the page alone.
+let shown = "";
+// Writes in flight. A poll during a write could undo the change already on screen, so polls wait.
+let busy = 0;
+// The list the look dialog edits, or null when it creates a list.
+let lookFor = null;
+let statusTimer;
+
+function el(tag, props = {}, ...children) {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children);
+  return node;
+}
+
+async function api(path, options) {
+  const response = await fetch(path, options);
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error);
+  return body;
+}
+
+const send = (method, path, body) => api(path, { method, headers: JSON_HEADERS, body: JSON.stringify(body) });
+const itemsPath = (entityId) => `api/items?list=${encodeURIComponent(entityId)}`;
+const currentId = () => decodeURIComponent(location.hash.slice(1));
+const currentList = () => lists.find((list) => list.entity_id === currentId());
+
+function setStatus(text, isError = false) {
+  $("status").textContent = text;
+  $("status").classList.toggle("error", isError);
+  clearTimeout(statusTimer);
+  if (text) statusTimer = setTimeout(() => setStatus(""), 6000);
+}
+
+function countLabel(list) {
+  if (list.open === null) return "Unavailable";
+  if (list.open === 0) return "All set";
+  return list.open === 1 ? "1 item" : `${list.open} items`;
+}
+
+function tile(list) {
+  return el("a", { className: `tile c-${list.color}`, href: `#${list.entity_id}` },
+    el("span", { className: "tile-icon", textContent: list.icon }),
+    el("span", { className: "tile-name", textContent: list.name }),
+    el("span", { className: "tile-count", textContent: countLabel(list) }));
+}
+
+function renderHome() {
+  const hidden = lists.filter((list) => list.hidden);
+  const add = el("button", { type: "button", className: "tile new" },
+    el("span", { className: "tile-icon", textContent: "+" }), el("span", { className: "tile-name", textContent: "New list" }));
+  add.addEventListener("click", () => openLook(null));
+  $("tiles").replaceChildren(...lists.filter((list) => !list.hidden).map(tile), add);
+  $("hidden-lists").hidden = !hidden.length;
+  $("hidden-summary").textContent = `Hidden lists (${hidden.length})`;
+  $("hidden-tiles").replaceChildren(...hidden.map(tile));
+}
+
+function itemRow(item) {
+  const done = item.status === "completed";
+  const toggle = el("button", { type: "button", className: "item", disabled: !item.uid },
+    el("span", { className: "check" }),
+    el("span", { className: "text", textContent: item.summary },
+      item.description ? el("span", { className: "note", textContent: item.description }) : ""));
+  toggle.setAttribute("aria-pressed", done);
+  toggle.addEventListener("click", () => write(
+    () => { item.status = done ? "needs_action" : "completed"; },
+    (list) => send("PUT", "api/items", { list, uid: item.uid, done: !done })));
+  const remove = el("button", { type: "button", className: "remove", ariaLabel: `Remove ${item.summary}`,
+    textContent: "×", disabled: !item.uid });
+  remove.addEventListener("click", () => write(
+    () => { items = items.filter((other) => other !== item); },
+    (list) => send("POST", "api/items/delete", { list, uid: item.uid })));
+  return el("li", {}, toggle, remove);
+}
+
+function renderList(list) {
+  const open = items.filter((item) => item.status !== "completed");
+  const done = items.filter((item) => item.status === "completed");
+  $("open-items").replaceChildren(...open.map(itemRow));
+  $("done-items").replaceChildren(...done.map(itemRow));
+  $("empty").hidden = open.length > 0;
+  $("empty").dataset.icon = list.icon;
+  $("empty").textContent = done.length ? "All set." : "Nothing on this list.";
+  $("done-head").hidden = !done.length;
+  $("done-title").textContent = `Got it · ${done.length}`;
+}
+
+function render() {
+  const list = currentList();
+  const state = JSON.stringify([currentId(), lists, items]);
+  if (state === shown) return;
+  shown = state;
+  document.body.className = list ? `c-${list.color}` : "";
+  $("top").classList.toggle("colored", !!list);
+  $("title").textContent = list ? `${list.icon} ${list.name}` : "Lists";
+  document.title = list ? list.name : "Lists";
+  for (const id of ["back", "menu", "list"]) $(id).hidden = !list;
+  $("home").hidden = !!list;
+  if (list) renderList(list);
+  else renderHome();
+}
+
+async function refresh() {
+  if (busy) return;
+  try {
+    const fresh = await api("api/lists");
+    const id = currentId();
+    let freshItems = [];
+    if (id && fresh.some((list) => list.entity_id === id)) freshItems = await api(itemsPath(id));
+    if (busy || id !== currentId()) return;
+    lists = fresh;
+    items = freshItems;
+    if (id && !currentList()) {
+      setStatus("That list was deleted.");
+      location.hash = "";
+    }
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+  render();
+}
+
+// Shows a change at once, then saves it. The reply holds the list's items as Home Assistant has them.
+async function write(change, save) {
+  const id = currentId();
+  // A tap can land on a row after the back link cleared the hash, but before the page redraws.
+  if (!id) return;
+  busy++;
+  change();
+  render();
+  try {
+    const fresh = await save(id);
+    if (id === currentId()) items = fresh;
+  } catch (error) {
+    setStatus(error.message, true);
+    const fresh = await api(itemsPath(id)).catch(() => items);
+    if (id === currentId()) items = fresh;
+  } finally {
+    busy--;
+  }
+  render();
+}
+
+function choice(name, value, checked, content) {
+  return el("label", { className: "choice" },
+    el("input", { type: "radio", name, value, checked, ariaLabel: value }), content);
+}
+
+function openLook(list) {
+  lookFor = list?.entity_id ?? null;
+  const used = new Set(lists.map((other) => other.color));
+  const color = list?.color ?? COLORS.find((name) => !used.has(name)) ?? COLORS[0];
+  $("look-title").textContent = list ? "Icon and color" : "New list";
+  $("look-save").textContent = list ? "Save" : "Create";
+  $("name-field").hidden = !!list;
+  $("look-name").value = "";
+  $("look-name").required = !list;
+  $("look-error").textContent = "";
+  $("icons").replaceChildren(...ICONS.map((icon) =>
+    choice("icon", icon, icon === (list?.icon ?? ICONS[0]), el("span", { textContent: icon }))));
+  $("colors").replaceChildren(...COLORS.map((name) =>
+    choice("color", name, name === color, el("span", { className: `swatch c-${name}` }))));
+  $("look-dialog").className = `c-${color}`;
+  $("look-dialog").showModal();
+}
+
+$("colors").addEventListener("change", (event) => { $("look-dialog").className = `c-${event.target.value}`; });
+
+$("look-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  const look = { icon: form.get("icon"), color: form.get("color") };
+  const label = $("look-save").textContent;
+  $("look-save").disabled = true;
+  $("look-save").textContent = lookFor ? "Saving…" : "Creating…";
+  try {
+    if (lookFor) {
+      await send("PUT", "api/look", { entity_id: lookFor, ...look });
+    } else {
+      const list = await send("POST", "api/lists", { name: form.get("name"), ...look });
+      location.hash = list.entity_id;
+    }
+    $("look-dialog").close();
+    await refresh();
+  } catch (error) {
+    $("look-error").textContent = error.message;
+  } finally {
+    $("look-save").disabled = false;
+    $("look-save").textContent = label;
+  }
+});
+
+$("add-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const summary = $("add-input").value.trim();
+  if (!summary) return;
+  $("add-input").value = "";
+  write(() => { items.push({ uid: "", summary, status: "needs_action" }); },
+    (list) => send("POST", "api/items", { list, summary }));
+});
+
+$("clear").addEventListener("click", () => write(
+  () => { items = items.filter((item) => item.status !== "completed"); },
+  (list) => send("POST", "api/items/clear", { list })));
+
+$("menu").addEventListener("click", () => {
+  const list = currentList();
+  $("menu-title").textContent = list.name;
+  $("menu-hide").textContent = list.hidden ? "Show on the Lists page" : "Hide from the Lists page";
+  $("menu-delete").hidden = !list.deletable;
+  $("menu-note").hidden = list.deletable;
+  $("menu-dialog").showModal();
+});
+
+$("menu-look").addEventListener("click", () => {
+  $("menu-dialog").close();
+  openLook(currentList());
+});
+
+$("menu-hide").addEventListener("click", async () => {
+  const list = currentList();
+  $("menu-dialog").close();
+  try {
+    await send("PUT", "api/look", { entity_id: list.entity_id, hidden: !list.hidden });
+    if (!list.hidden) location.hash = "";
+    setStatus(list.hidden ? `${list.name} is back on the Lists page.` : `${list.name} is hidden. Find it under Hidden lists.`);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+  refresh();
+});
+
+$("menu-delete").addEventListener("click", () => {
+  const list = currentList();
+  const count = items.length;
+  $("menu-dialog").close();
+  $("delete-title").textContent = `Delete ${list.name}?`;
+  $("delete-text").textContent = count
+    ? `Its ${count === 1 ? "item goes" : `${count} items go`} too. This cannot be undone.`
+    : "This cannot be undone.";
+  $("delete-dialog").showModal();
+});
+
+$("delete-confirm").addEventListener("click", async () => {
+  const list = currentList();
+  $("delete-confirm").disabled = true;
+  try {
+    await send("POST", "api/lists/delete", { entity_id: list.entity_id });
+    $("delete-dialog").close();
+    location.hash = "";
+    setStatus(`Deleted ${list.name}.`);
+  } catch (error) {
+    $("delete-dialog").close();
+    setStatus(error.message, true);
+  } finally {
+    $("delete-confirm").disabled = false;
+  }
+  refresh();
+});
+
+for (const button of document.querySelectorAll("[data-close]")) {
+  button.addEventListener("click", () => button.closest("dialog").close());
+}
+
+window.addEventListener("hashchange", () => {
+  items = [];
+  render();
+  refresh();
+});
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) refresh();
+});
+setInterval(() => {
+  if (!document.hidden) refresh();
+}, POLL_MS);
+refresh();
+</script>
+</body>
+</html>
