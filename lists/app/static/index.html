@@ -703,6 +703,21 @@ for (const button of document.querySelectorAll("[data-close]")) {
   button.addEventListener("click", () => button.closest("dialog").close());
 }
 
+// A tap on the dimmed area closes a pop-up. The press must also start there, so a text selection
+// dragged past the edge does not close it.
+for (const dialog of document.querySelectorAll("dialog")) {
+  const outside = (event) => {
+    const box = dialog.getBoundingClientRect();
+    return event.target === dialog && (event.clientX < box.left || event.clientX > box.right
+      || event.clientY < box.top || event.clientY > box.bottom);
+  };
+  let pressedOutside = false;
+  dialog.addEventListener("pointerdown", (event) => { pressedOutside = outside(event); });
+  dialog.addEventListener("click", (event) => {
+    if (pressedOutside && outside(event)) dialog.close();
+  });
+}
+
 window.addEventListener("hashchange", () => {
   items = [];
   render();

@@ -9,3 +9,4 @@
 - Categories put lists in sections, for example Stores and Projects. Rename a category from its section heading.
 - Tiles or rows: each person picks a layout, kept on all their devices.
 - Changes made on the stock To-do lists page show within 3 seconds.
+- A tap outside a pop-up closes it.
