@@ -67,6 +67,8 @@ LOOK_FIELDS = {"color": str, "category": str, "hidden": bool}
 SETTINGS = {"layout": ["tiles", "rows"], "order": ["added", "name"], "favorites": ["show", "hide"],
             "text": ["normal", "large"], "theme": ["device", "light", "dark"]}
 DEFAULT_SETTINGS = {name: choices[0] for name, choices in SETTINGS.items()}
+# The to-do list of Home Assistant's Shopping list integration, which Home Assistant sets up at onboarding.
+BUILT_IN_SHOPPING_LIST = "todo.shopping_list"
 # A list is deletable here only if it is a Local To-do list: its config entry holds that one list.
 LISTS_TEMPLATE = """
 {%- set local = integration_entities('local_todo') -%}
@@ -119,7 +121,10 @@ def load_looks():
 
 def default_look(entity_id):
     # A list made on another page gets a stable color from its entity ID, so new tiles differ without setup.
-    return {"color": COLORS[zlib.crc32(entity_id.encode()) % len(COLORS)], "category": "", "hidden": False}
+    # Home Assistant's built-in Shopping list starts hidden: the store lists replace it (DOCS.md, "The built-in
+    # Shopping list").
+    return {"color": COLORS[zlib.crc32(entity_id.encode()) % len(COLORS)], "category": "",
+            "hidden": entity_id == BUILT_IN_SHOPPING_LIST}
 
 
 def validate_look(changes, current):
@@ -439,16 +444,22 @@ def import_data(data):
     """Add the lists and items of `data` that Home Assistant lacks. Take the looks, the orders, the favorites, and
     the settings.
 
-    Delete nothing. Return the number of new lists and new items. Call under save_lock.
+    Delete nothing. Return the number of new lists and new items, and the names of the lists that Home Assistant
+    did not create. Call under save_lock.
     """
     by_name = {todo["name"].casefold(): todo for todo in fetch_lists()}
     looks = load_looks()
     known = load_categories(looks)
-    counts = {"lists": 0, "items": 0}
+    counts = {"lists": 0, "items": 0, "skipped": []}
     for entry in data["lists"]:
         todo = by_name.get(entry["name"].casefold())
         if not todo:
-            todo = by_name[entry["name"].casefold()] = create_list(entry["name"])
+            try:
+                todo = by_name[entry["name"].casefold()] = create_list(entry["name"])
+            except BadRequest:
+                # For example, a name too close to one that Home Assistant has. The other lists still come in.
+                counts["skipped"].append(entry["name"])
+                continue
             counts["lists"] += 1
         entity_id = todo["entity_id"]
         looks[entity_id] = entry["look"]

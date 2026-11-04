@@ -363,8 +363,8 @@
       <label><input type="radio" name="order" value="added"><span>As added</span></label>
       <label><input type="radio" name="order" value="name"><span>A–Z</span></label>
     </div>
-    <span class="label">Favorites</span>
-    <div class="segmented" role="radiogroup" aria-label="Favorites">
+    <span class="label">Favorites section</span>
+    <div class="segmented" role="radiogroup" aria-label="Favorites section">
       <label><input type="radio" name="favorites" value="show"><span>Show</span></label>
       <label><input type="radio" name="favorites" value="hide"><span>Hide</span></label>
     </div>
@@ -520,7 +520,7 @@ function badge(list, className) {
     textContent: icon || [...label][0].toLocaleUpperCase() });
 }
 
-const isFavorite = (list) => settings.favorites === "show" && favorites.includes(list.entity_id);
+const isFavorite = (list) => favorites.includes(list.entity_id);
 const star = (list) => (isFavorite(list)
   ? el("span", { className: "fav", textContent: "★", ariaLabel: "Favorite" }) : "");
 
@@ -531,19 +531,20 @@ function tile(list) {
 }
 
 function row(list) {
-  // With favorites shown, every row keeps a slot for the star before its count, so the stars line up.
-  const slot = settings.favorites === "show" ? el("span", { className: "row-fav" }, star(list)) : "";
+  // Once this person has a favorite, every row keeps a slot for the star before its count, so the stars line up.
+  const slot = favorites.length ? el("span", { className: "row-fav" }, star(list)) : "";
   return paint(el("a", { className: "row", href: `#${list.entity_id}` }, badge(list, "row-icon"),
     el("span", { className: "row-name", textContent: splitName(list.name).label }), slot,
     el("span", { className: "row-count", textContent: countLabel(list) })), list.color);
 }
 
-// This person's favorites first, if shown, then every category in its saved order, also an empty one, then
-// the lists without one. Case does not split a category.
+// This person's favorites first, unless the setting hides that section, then every category in its saved
+// order, also an empty one, then the lists without one. Case does not split a category.
 function groups(shown) {
+  const inFavorites = (list) => settings.favorites === "show" && isFavorite(list);
   const byKey = new Map(categories.map((name) =>
     [name.toLocaleLowerCase(), { title: name, lists: [], kind: "category" }]));
-  for (const list of [...shown].sort(byRank).filter((list) => !isFavorite(list))) {
+  for (const list of [...shown].sort(byRank).filter((list) => !inFavorites(list))) {
     const key = list.category.toLocaleLowerCase();
     if (!byKey.has(key)) byKey.set(key, { title: list.category, lists: [], kind: "category" });
     byKey.get(key).lists.push(list);
@@ -551,7 +552,7 @@ function groups(shown) {
   const rest = byKey.get("");
   byKey.delete("");
   const sections = [...byKey.values()];
-  const favored = [...shown].sort(byRank).filter(isFavorite);
+  const favored = [...shown].sort(byRank).filter(inFavorites);
   if (favored.length) sections.unshift({ title: "Favorites", lists: favored, kind: "favorites" });
   if (rest) sections.push({ title: sections.length ? "Other" : "", lists: rest.lists, kind: "other" });
   return sections;
@@ -835,7 +836,7 @@ function render() {
   $("title").textContent = list ? list.name : "Lists";
   document.title = list ? list.name : "Lists";
   for (const id of ["back", "menu", "list"]) $(id).hidden = !list;
-  $("star").hidden = !list || settings.favorites === "hide";
+  $("star").hidden = !list;
   if (list) {
     const favorite = favorites.includes(list.entity_id);
     $("star").textContent = favorite ? "★" : "☆";
@@ -989,7 +990,9 @@ $("import-file").addEventListener("change", async () => {
     settings = await api("api/settings");
     applySettings();
     $("settings-dialog").close();
-    setStatus(`Imported ${plural(counts.lists, "new list")} and ${plural(counts.items, "new item")}.`);
+    const skipped = counts.skipped.length
+      ? ` Skipped ${counts.skipped.join(", ")}: a list with nearly the same name exists.` : "";
+    setStatus(`Imported ${plural(counts.lists, "new list")} and ${plural(counts.items, "new item")}.${skipped}`);
   } catch (error) {
     setStatus(`Import failed: ${error.message}`, true);
   }

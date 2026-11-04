@@ -15,7 +15,22 @@ Each list is a Home Assistant to-do list, a `todo` entity from the **Local To-do
 
 Automations, scripts, and voice assistants use the lists through the `todo` actions, for example `todo.add_item` with `entity_id: todo.grocery`.
 
-The Lists page also shows to-do lists of other integrations, for example the Shopping list. You can add and check off their items. You cannot delete those lists here; remove them in their own integration.
+The Lists page also shows to-do lists of other integrations. You can add and check off their items. You cannot delete those lists here; remove them in their own integration.
+
+## The built-in Shopping list
+
+Home Assistant sets up its Shopping list integration at onboarding, with one list, `todo.shopping_list`. The store lists replace it, so the Lists page hides it at first. To use it, open **Hidden lists** at the bottom of the page, open the list, then tap **⋯** and **Show list**.
+
+A hidden Shopping list still takes items from anything that targets it. For example:
+
+- the voice command "add milk to my shopping list", which the Shopping list integration registers;
+- the `shopping_list.*` actions in automations and scripts;
+- the Shopping list card on a dashboard.
+
+Those items go to the hidden list, not to your grocery list. Before you use voice or such automations, do one of these:
+
+- Rename the Shopping list to your grocery list, for example "🛒 Grocery", and show it. It keeps its entity ID, so the commands above add to it. For voice, also give it the alias "Grocery" in Home Assistant (**Settings > Entities >** the list **> Voice assistants**).
+- Or remove the Shopping list integration in **Settings > Devices & services**, and give your Local To-do grocery list the alias "shopping list". Then test the voice command: this route is not tested.
 
 ## Who can do what
 
@@ -50,7 +65,7 @@ Home Assistant cannot open an app page at sign-in, so the person opens Home Assi
 | Give a list an icon | Put an emoji in its name, for example "🛒 Grocery". The first emoji is the icon, and the page shows the name without it. A name can have more emoji, for example "🛒 Grocery 🥕". A list without an emoji shows its first letter. |
 | Type an emoji | On a phone, use the emoji keyboard. On a computer, put the cursor where the emoji goes, then select **😀** next to the name to search all emoji. |
 | Pick a color | Tap one of the 16 colors, or the rainbow swatch for any color from the device's color picker. On a light color, the text turns dark. |
-| Make a list a favorite | Open it, then tap **☆** next to **⋯**. The star fills gold (**★**), and the list moves to the **★ Favorites** section at the top of the page, with a small gold ★ on it. Tap **★** to undo. Each person has their own favorites. |
+| Make a list a favorite | Open it, then tap **☆** next to **⋯**. The star fills gold (**★**), and the list moves to the **★ Favorites** section at the top of the page, with a small gold ★ on it. If you hide that section in the settings, the list stays in its own section, still with its ★. Tap **★** to undo. Each person has their own favorites. |
 | Change a list | Open it. Tap **⋯**, then **Edit list**. A new name also shows on the stock To-do page and to voice assistants. The entity ID stays the same. |
 | Hide a list | Tap **⋯**, then **Hide list**. It moves to **Hidden lists** at the bottom of the page, and stays in Home Assistant. To show it again, open it, then tap **⋯** and **Show list**. |
 | Delete a list | Tap **⋯**, then **Delete list**, then **Delete**. This also deletes all its items. Only a Home Assistant backup brings them back. |
@@ -86,7 +101,7 @@ Tap the settings button at the top right of the Lists page. Each person keeps th
 |---|---|
 | Layout | Tiles or rows |
 | Item order | As added, or A–Z. A–Z changes only this page; Home Assistant keeps the order the items were added. |
-| Favorites | Show or hide the **★ Favorites** section, the star button, and the stars on lists. When they are hidden, your favorites stay in their sections, and they come back when you show them again. |
+| Favorites section | Show or hide the **★ Favorites** section. When it is hidden, your favorites stay in their own sections. The stars on lists and the star button show either way. |
 | Text size | Normal or large |
 | Theme | Follow the device, light, or dark |
 
@@ -95,7 +110,7 @@ Tap the settings button at the top right of the Lists page. Each person keeps th
 Under **Backup** in the settings:
 
 - **Export** saves a JSON file with every list, item, color, and category, the order of the lists and categories, and each person's favorites and settings.
-- **Import** reads such a file. It adds the lists and items that are missing, matched by name, and takes the colors, categories, orders, favorites, and settings from the file. It never deletes or changes items that are already there.
+- **Import** reads such a file. It adds the lists and items that are missing, matched by name, and takes the colors, categories, orders, favorites, and settings from the file. It never deletes or changes items that are already there. If Home Assistant does not create a list, for example because its name is too close to one it has, import skips that list, names it, and brings in the rest.
 
 Use them to move the lists to another Home Assistant, or to keep a copy apart from Home Assistant backups.
 

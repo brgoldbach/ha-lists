@@ -133,6 +133,12 @@ class PageListsTest(unittest.TestCase):
         self.assertEqual([item["deletable"] for item in lists], [True, False])
         self.assertNotIn("entry_id", lists[0])
 
+    def test_built_in_shopping_list_starts_hidden(self):
+        self.assertEqual((default_look("todo.shopping_list")["hidden"], default_look("todo.grocery")["hidden"]),
+                         (True, False))
+        [item] = page_lists([todo("Shopping_list", entry_id=None)], {"todo.shopping_list": {"hidden": False}})
+        self.assertFalse(item["hidden"])
+
     def test_default_look_is_stable_and_stored_look_wins(self):
         self.assertEqual(default_look("todo.lowes"), default_look("todo.lowes"))
         [item] = page_lists([todo("Lowes")], {"todo.lowes": {"color": "blue"}})
@@ -369,7 +375,7 @@ class AppTest(unittest.TestCase):
         self.ha.lists.clear()
         for name in ("LOOKS_FILE", "CATEGORIES_FILE", "SETTINGS_FILE", "ORDER_FILE", "FAVORITES_FILE"):
             getattr(server, name).unlink()
-        self.assertEqual(self.call("POST", "/api/import", exported), (200, {"lists": 2, "items": 3}))
+        self.assertEqual(self.call("POST", "/api/import", exported), (200, {"lists": 2, "items": 3, "skipped": []}))
 
         items = {item["summary"]: item for item in self.ha.lists["todo.grocery"]["items"]}
         self.assertEqual((items["Eggs"]["status"], items["Eggs"]["description"], items["Milk"]["status"]),
@@ -388,9 +394,18 @@ class AppTest(unittest.TestCase):
             exported = json.load(response)
         exported["lists"][0]["items"].append({"summary": "Bread", "status": "needs_action"})
         exported["lists"].append({"name": "Lowes", "items": []})
-        self.assertEqual(self.call("POST", "/api/import", exported), (200, {"lists": 1, "items": 1}))
-        self.assertEqual(self.call("POST", "/api/import", exported), (200, {"lists": 0, "items": 0}))
+        self.assertEqual(self.call("POST", "/api/import", exported), (200, {"lists": 1, "items": 1, "skipped": []}))
+        self.assertEqual(self.call("POST", "/api/import", exported), (200, {"lists": 0, "items": 0, "skipped": []}))
         self.assertEqual([item["summary"] for item in self.ha.lists["todo.grocery"]["items"]], ["Eggs", "Bread"])
+
+    def test_import_skips_a_list_home_assistant_does_not_create(self):
+        self.ha.add_list("Grocery")
+        exported = {"version": 1, "lists": [
+            {"name": "🛒 Grocery", "items": [{"summary": "Eggs", "status": "needs_action"}]},
+            {"name": "Lowes", "items": [{"summary": "Caulk", "status": "needs_action"}]}]}
+        self.assertEqual(self.call("POST", "/api/import", exported),
+                         (200, {"lists": 1, "items": 1, "skipped": ["🛒 Grocery"]}))
+        self.assertEqual(sorted(self.ha.lists), ["todo.grocery", "todo.lowes"])
 
     def test_import_rejects_other_files(self):
         for body in ({"chores": []}, {"version": 2, "lists": []},
