@@ -44,8 +44,10 @@ ENTITY_PATTERN = re.compile(r"todo\.[a-z0-9_]+")
 NAME_MAX = 40
 ITEM_MAX = 200
 CATEGORY_MAX = 30
-# Same names as the color classes on the page.
-COLORS = ["teal", "blue", "indigo", "purple", "pink", "red", "orange", "amber", "green", "slate"]
+# Same names as the color classes on the page. A custom color from the color wheel is a hex code instead.
+COLORS = ["teal", "cyan", "blue", "navy", "indigo", "purple", "magenta", "pink", "red", "orange", "amber", "brown",
+          "lime", "green", "slate", "graphite"]
+CUSTOM_COLOR = re.compile(r"#[0-9a-f]{6}")
 LOOK_FIELDS = {"color": str, "category": str, "hidden": bool}
 # The first one is the default.
 LAYOUTS = ["tiles", "rows"]
@@ -103,7 +105,8 @@ def validate_look(changes, current):
         raise BadRequest("Invalid look.")
     look = {**current, **changes}
     look["category"] = " ".join(look["category"].split())
-    if look["color"] not in COLORS:
+    look["color"] = look["color"].lower()
+    if look["color"] not in COLORS and not CUSTOM_COLOR.fullmatch(look["color"]):
         raise BadRequest("Invalid look.")
     if len(look["category"]) > CATEGORY_MAX:
         raise BadRequest(f"A category can have at most {CATEGORY_MAX} characters.")

@@ -30,9 +30,13 @@ class ValidateLookTest(unittest.TestCase):
         self.assertEqual(validate_look({"category": "  Home   stores ", "hidden": True}, LOOK),
                          {"color": "teal", "category": "Home stores", "hidden": True})
 
+    def test_accepts_custom_color(self):
+        self.assertEqual(validate_look({"color": "#3A86FF"}, LOOK)["color"], "#3a86ff")
+
     def test_rejects_unknown_color(self):
-        with self.assertRaises(BadRequest):
-            validate_look({"color": "beige"}, LOOK)
+        for color in ("beige", "#3a86f", "#3a86ffaa", "3a86ff"):
+            with self.subTest(color=color), self.assertRaises(BadRequest):
+                validate_look({"color": color}, LOOK)
 
     def test_rejects_unknown_field_and_wrong_type(self):
         for changes in ({"icon": "🛒"}, {"hidden": "yes"}, {"category": None}, {"category": "x" * 31}, ["color"]):

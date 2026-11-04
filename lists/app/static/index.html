@@ -8,7 +8,7 @@
   :root {
     --bg: #f3f4f8; --card: #fff; --text: #17181c; --muted: #6b6f7a; --line: #e3e5eb; --danger: #c62828;
     --shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 4px 14px rgb(16 24 40 / 0.08);
-    --c1: #0f9d8a; --c2: #34c3a9;
+    --c1: #0f9d8a; --c2: #34c3a9; --ink: #fff;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -16,17 +16,23 @@
       --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 16px rgb(0 0 0 / 0.35);
     }
   }
-  /* Same names as COLORS in server.py. */
+  /* Same names as COLORS in server.py. --ink is the text color on a list color. */
   .c-teal { --c1: #0f9d8a; --c2: #34c3a9; }
+  .c-cyan { --c1: #0b8aa8; --c2: #3dbfdc; }
   .c-blue { --c1: #1d72cf; --c2: #4aa3f0; }
+  .c-navy { --c1: #26386e; --c2: #4f63a0; }
   .c-indigo { --c1: #4650c0; --c2: #7c84ea; }
   .c-purple { --c1: #8247c2; --c2: #b07ce4; }
+  .c-magenta { --c1: #a3239c; --c2: #d45fce; }
   .c-pink { --c1: #c93f78; --c2: #ec7aa9; }
   .c-red { --c1: #cc3d36; --c2: #ef7468; }
   .c-orange { --c1: #d9661a; --c2: #f59a45; }
   .c-amber { --c1: #b57b0e; --c2: #e3ab2e; }
+  .c-brown { --c1: #7a5230; --c2: #a97c55; }
+  .c-lime { --c1: #5b8c12; --c2: #8dc63f; }
   .c-green { --c1: #3a9137; --c2: #68c15f; }
   .c-slate { --c1: #4d5a6c; --c2: #7f8ea3; }
+  .c-graphite { --c1: #2c2f36; --c2: #50545e; }
 
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
@@ -44,7 +50,7 @@
   .top h1 { flex: 1; min-width: 0; margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02em;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .top.colored { max-width: none; margin-bottom: 16px; padding-bottom: 22px; border-radius: 0 0 24px 24px;
-    color: #fff; background: linear-gradient(135deg, var(--c1), var(--c2)); box-shadow: var(--shadow); }
+    color: var(--ink); background: linear-gradient(135deg, var(--c1), var(--c2)); box-shadow: var(--shadow); }
   .top.colored h1 { font-size: 24px; }
   .round {
     flex: none; display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%;
@@ -63,7 +69,7 @@
   .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
   .tile {
     position: relative; overflow: hidden; display: flex; flex-direction: column; min-height: 136px; padding: 16px;
-    border: 0; border-radius: 22px; color: #fff; text-align: left; text-decoration: none;
+    border: 0; border-radius: 22px; color: var(--ink); text-align: left; text-decoration: none;
     background: linear-gradient(135deg, var(--c1), var(--c2)); box-shadow: var(--shadow); transition: transform 0.12s;
   }
   .tile::after {
@@ -81,22 +87,21 @@
   .tile.new::after { content: none; }
   .tile.new .tile-icon { font-size: 34px; font-weight: 300; }
   .tile.new .tile-name { margin: 0; padding: 0; font-size: 16px; font-weight: 600; }
-  .rows { overflow: hidden; border-radius: 18px; background: var(--card); box-shadow: var(--shadow); }
+  .rows { display: grid; gap: 8px; }
   .row {
-    display: flex; align-items: center; gap: 14px; width: 100%; min-height: 64px; padding: 10px 16px;
-    border: 0; border-bottom: 1px solid var(--line); background: none; font-size: 17px; text-align: left;
-    color: inherit; text-decoration: none;
+    display: flex; align-items: center; gap: 14px; width: 100%; min-height: 62px; padding: 10px 16px;
+    border: 0; border-radius: 18px; font-size: 17px; text-align: left; color: var(--ink); text-decoration: none;
+    background: linear-gradient(135deg, var(--c1), var(--c2)); box-shadow: var(--shadow); transition: transform 0.12s;
   }
-  .row:last-child { border-bottom: 0; }
-  .row:active { background: var(--bg); }
+  .row:active { transform: scale(0.99); }
   .row-icon { flex: none; display: grid; place-items: center; width: 42px; height: 42px; border-radius: 13px;
-    font-size: 22px; background: linear-gradient(135deg, var(--c1), var(--c2)); }
-  .row-icon.letter { color: #fff; font-size: 20px; font-weight: 800; }
-  .row-name { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
-  .row-count { flex: none; color: var(--muted); font-size: 15px; }
+    font-size: 22px; background: rgb(255 255 255 / 0.22); }
+  .row-icon.letter { font-size: 20px; font-weight: 800; }
+  .row-name { flex: 1; min-width: 0; font-weight: 700; overflow-wrap: anywhere; }
+  .row-count { flex: none; font-size: 15px; opacity: 0.92; }
   .row-count::after { content: "›"; margin-left: 10px; font-size: 24px; vertical-align: -2px; }
-  .row.new { color: var(--muted); }
-  .row.new .row-icon { border: 2px dashed var(--line); background: none; font-size: 26px; font-weight: 300; }
+  .row.new { color: var(--muted); background: none; box-shadow: none; border: 2px dashed var(--line); }
+  .row.new .row-icon { background: none; font-size: 26px; font-weight: 300; }
 
   details { margin-top: 28px; }
   summary { color: var(--muted); cursor: pointer; margin-bottom: 12px; }
@@ -109,7 +114,7 @@
     background: var(--card); color: var(--text); font: inherit; font-size: 17px; box-shadow: var(--shadow);
   }
   .add input:focus { outline: 2px solid var(--c1); outline-offset: -1px; }
-  .add button { flex: none; width: 52px; height: 52px; border: 0; border-radius: 16px; color: #fff; font-size: 30px;
+  .add button { flex: none; width: 52px; height: 52px; border: 0; border-radius: 16px; color: var(--ink); font-size: 30px;
     line-height: 1; background: linear-gradient(135deg, var(--c1), var(--c2)); box-shadow: var(--shadow); }
 
   .items { list-style: none; margin: 0; padding: 0; overflow: hidden; border-radius: 18px;
@@ -123,7 +128,7 @@
   }
   .item:disabled { opacity: 0.6; cursor: default; }
   .check { flex: none; display: grid; place-items: center; width: 26px; height: 26px;
-    border: 2px solid var(--c1); border-radius: 50%; color: #fff; font-size: 15px; font-weight: 700; }
+    border: 2px solid var(--c1); border-radius: 50%; color: var(--ink); font-size: 15px; font-weight: 700; }
   .item[aria-pressed="true"] .check { background: var(--c1); }
   .item[aria-pressed="true"] .check::after { content: "✓"; }
   .item[aria-pressed="true"] .text { color: var(--muted); text-decoration: line-through; }
@@ -147,7 +152,7 @@
   .field input { width: 100%; height: 48px; padding: 0 14px; border: 1px solid var(--line); border-radius: 14px;
     background: var(--bg); color: var(--text); font: inherit; font-size: 17px; }
   .label { display: block; margin: 0 0 8px; font-size: 14px; font-weight: 600; color: var(--muted); }
-  .choices { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-bottom: 16px; }
+  .choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 6px; margin-bottom: 16px; }
   .choice { position: relative; }
   .choice input { position: absolute; opacity: 0; pointer-events: none; }
   .choice span { display: grid; place-items: center; height: 44px; border: 2px solid transparent; border-radius: 12px;
@@ -155,6 +160,18 @@
   .choice .swatch { background: linear-gradient(135deg, var(--c1), var(--c2)); }
   .choice input:checked + span { border-color: var(--text); }
   .choice input:focus-visible + span { outline: 2px solid var(--c1); outline-offset: 2px; }
+  /* The rainbow shows until someone picks a custom color; then the color itself shows. */
+  .custom-color {
+    width: 100%; height: 44px; padding: 0; border: 2px solid transparent; border-radius: 12px; cursor: pointer;
+    background: conic-gradient(#f44336, #ffeb3b, #4caf50, #00bcd4, #3f51b5, #e91e63, #f44336);
+    -webkit-appearance: none; appearance: none;
+  }
+  .custom-color.picked { border-color: var(--text); }
+  .custom-color::-webkit-color-swatch-wrapper { padding: 0; }
+  .custom-color::-webkit-color-swatch { border: 0; border-radius: 10px; opacity: 0; }
+  .custom-color.picked::-webkit-color-swatch { opacity: 1; }
+  .custom-color::-moz-color-swatch { border: 0; border-radius: 10px; opacity: 0; }
+  .custom-color.picked::-moz-color-swatch { opacity: 1; }
   .name-row { display: flex; gap: 8px; }
   .name-row input { flex: 1; min-width: 0; }
   .name-row button { flex: none; width: 48px; height: 48px; border: 1px solid var(--line); border-radius: 14px;
@@ -169,11 +186,11 @@
   @media (min-width: 480px) { emoji-picker { --num-columns: 9; } }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: -6px 0 16px; }
   .chip { padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); font-size: 15px; }
-  .chip[aria-pressed="true"] { border-color: transparent; color: #fff; background: linear-gradient(135deg, var(--c1), var(--c2)); }
+  .chip[aria-pressed="true"] { border-color: transparent; color: var(--ink); background: linear-gradient(135deg, var(--c1), var(--c2)); }
   .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
   .actions button { min-width: 6rem; height: 44px; padding: 0 18px; border: 1px solid var(--line); border-radius: 14px;
     background: none; font-weight: 600; }
-  .actions .primary { border: 0; color: #fff; background: linear-gradient(135deg, var(--c1), var(--c2)); }
+  .actions .primary { border: 0; color: var(--ink); background: linear-gradient(135deg, var(--c1), var(--c2)); }
   .actions .danger { border: 0; color: #fff; background: var(--danger); }
   .menu button { display: block; width: 100%; padding: 14px 12px; border: 0; border-radius: 12px; background: none;
     font-size: 17px; text-align: left; }
@@ -303,7 +320,8 @@ const JSON_HEADERS = { "Content-Type": "application/json" };
 // Each open page asks for changes this often, so edits on another phone or page show up here.
 const POLL_MS = 3000;
 // Same names as COLORS in server.py.
-const COLORS = ["teal", "blue", "indigo", "purple", "pink", "red", "orange", "amber", "green", "slate"];
+const COLORS = ["teal", "cyan", "blue", "navy", "indigo", "purple", "magenta", "pink", "red", "orange", "amber",
+  "brown", "lime", "green", "slate", "graphite"];
 let lists = [];
 let items = [];
 // This person's layout of the Lists page: "tiles" or "rows".
@@ -314,6 +332,7 @@ let shown = "";
 let busy = 0;
 // The list the look dialog edits, or null when it creates a list.
 let lookFor = null;
+let lookColor = "";
 // The category the rename dialog renames.
 let renaming = "";
 let emojiPicker = null;
@@ -350,6 +369,23 @@ function countLabel(list) {
   return list.open === 1 ? "1 item" : `${list.open} items`;
 }
 
+// Light custom colors get dark text, so names stay readable.
+function isLight(hex) {
+  const [red, green, blue] = [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16));
+  return 0.299 * red + 0.587 * green + 0.114 * blue > 150;
+}
+
+// A preset color is a class. A custom color, such as "#3a86ff", sets the same variables inline.
+function paint(node, color) {
+  node.classList.remove(...COLORS.map((name) => `c-${name}`));
+  const custom = color?.startsWith("#");
+  if (color && !custom) node.classList.add(`c-${color}`);
+  node.style.setProperty("--c1", custom ? color : "");
+  node.style.setProperty("--c2", custom ? `color-mix(in srgb, ${color}, white 30%)` : "");
+  node.style.setProperty("--ink", custom && isLight(color) ? "#17181c" : "#fff");
+  return node;
+}
+
 // The first emoji in a list's name is its icon. The label is the name without that emoji.
 function splitName(name) {
   for (const { segment, index } of new Intl.Segmenter().segment(name)) {
@@ -371,15 +407,15 @@ function badge(list, className) {
 }
 
 function tile(list) {
-  return el("a", { className: `tile c-${list.color}`, href: `#${list.entity_id}` }, badge(list, "tile-icon"),
+  return paint(el("a", { className: "tile", href: `#${list.entity_id}` }, badge(list, "tile-icon"),
     el("span", { className: "tile-name", textContent: splitName(list.name).label }),
-    el("span", { className: "tile-count", textContent: countLabel(list) }));
+    el("span", { className: "tile-count", textContent: countLabel(list) })), list.color);
 }
 
 function row(list) {
-  return el("a", { className: `row c-${list.color}`, href: `#${list.entity_id}` }, badge(list, "row-icon"),
+  return paint(el("a", { className: "row", href: `#${list.entity_id}` }, badge(list, "row-icon"),
     el("span", { className: "row-name", textContent: splitName(list.name).label }),
-    el("span", { className: "row-count", textContent: countLabel(list) }));
+    el("span", { className: "row-count", textContent: countLabel(list) })), list.color);
 }
 
 // Categories in name order, then the lists without one. Case does not split a category.
@@ -466,7 +502,7 @@ function render() {
   const state = JSON.stringify([currentId(), layout, lists, items]);
   if (state === shown) return;
   shown = state;
-  document.body.className = list ? `c-${list.color}` : "";
+  paint(document.body, list?.color);
   $("top").classList.toggle("colored", !!list);
   $("title").textContent = list ? list.name : "Lists";
   document.title = list ? list.name : "Lists";
@@ -549,9 +585,11 @@ function openLook(list) {
   }));
   $("categories").hidden = !names.length;
   markCategory();
+  const custom = el("input", { type: "color", className: "custom-color", ariaLabel: "Any color",
+    value: color.startsWith("#") ? color : "#3a86ff" });
   $("colors").replaceChildren(...COLORS.map((name) =>
-    choice("color", name, name === color, el("span", { className: `swatch c-${name}` }))));
-  $("look-dialog").className = `c-${color}`;
+    choice("color", name, false, paint(el("span", { className: "swatch" }), name))), custom);
+  pickColor(color);
   $("look-dialog").showModal();
 }
 
@@ -562,11 +600,15 @@ function markCategory() {
   }
 }
 
-// Puts the picked emoji at the start of the name, in place of the icon emoji if the name starts with one.
-function setNameEmoji(emoji) {
-  const name = $("look-name").value.trim();
-  const { icon, label } = splitName(name);
-  $("look-name").value = `${emoji} ${icon && name.startsWith(icon) ? label : name}`.trim();
+// Puts the picked emoji where the cursor was in the name, with a space on each side.
+function insertEmoji(emoji) {
+  const input = $("look-name");
+  const before = input.value.slice(0, input.selectionStart).trimEnd();
+  const after = input.value.slice(input.selectionEnd).trimStart();
+  input.value = [before, emoji, after].filter(Boolean).join(" ");
+  const caret = (before ? before.length + 1 : 0) + emoji.length;
+  input.focus();
+  input.setSelectionRange(caret, caret);
 }
 
 $("look-category").addEventListener("input", markCategory);
@@ -583,8 +625,9 @@ $("name-emoji").addEventListener("click", async () => {
     emojiPicker = el("emoji-picker");
     emojiPicker.dataSource = "vendor/emoji-picker-element-data/en/emojibase/data.json";
     emojiPicker.addEventListener("emoji-click", (event) => {
-      setNameEmoji(event.detail.unicode);
+      // Close first: the name box cannot take focus while the picker covers it.
       $("emoji-dialog").close();
+      insertEmoji(event.detail.unicode);
     });
     $("emoji-slot").append(emojiPicker);
   }
@@ -601,12 +644,21 @@ $("rename-form").addEventListener("submit", async (event) => {
     $("rename-error").textContent = error.message;
   }
 });
-$("colors").addEventListener("change", (event) => { $("look-dialog").className = `c-${event.target.value}`; });
+// The look dialog's color: a preset name, or a hex code from the color wheel.
+function pickColor(color) {
+  lookColor = color;
+  for (const radio of $("colors").querySelectorAll("input[type=radio]")) radio.checked = radio.value === color;
+  $("colors").querySelector(".custom-color").classList.toggle("picked", color.startsWith("#"));
+  paint($("look-dialog"), color);
+}
+
+// A preset swatch and the color wheel both send input events, with a name or a hex code.
+$("colors").addEventListener("input", (event) => pickColor(event.target.value));
 
 $("look-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.target);
-  const look = { color: form.get("color"), category: form.get("category") };
+  const look = { color: lookColor, category: form.get("category") };
   const label = $("look-save").textContent;
   $("look-save").disabled = true;
   $("look-save").textContent = lookFor ? "Saving…" : "Creating…";
