@@ -50,6 +50,12 @@
     flex: none; display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%;
     background: rgb(255 255 255 / 0.2); color: inherit; font-size: 22px; line-height: 1; text-decoration: none;
   }
+  .top:not(.colored) .round { background: var(--card); box-shadow: var(--shadow); }
+  .round svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+
+  .group { margin-bottom: 24px; }
+  .group h2, .done-head h2 { margin: 0 4px 10px; font-size: 14px; font-weight: 700; letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--muted); }
 
   .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
   .tile {
@@ -70,9 +76,26 @@
   .tile.new::after { content: none; }
   .tile.new .tile-icon { font-size: 34px; font-weight: 300; }
   .tile.new .tile-name { margin: 0; padding: 0; font-size: 16px; font-weight: 600; }
+  .rows { overflow: hidden; border-radius: 18px; background: var(--card); box-shadow: var(--shadow); }
+  .row {
+    display: flex; align-items: center; gap: 14px; width: 100%; min-height: 64px; padding: 10px 16px;
+    border: 0; border-bottom: 1px solid var(--line); background: none; font-size: 17px; text-align: left;
+    color: inherit; text-decoration: none;
+  }
+  .row:last-child { border-bottom: 0; }
+  .row:active { background: var(--bg); }
+  .row-icon { flex: none; display: grid; place-items: center; width: 42px; height: 42px; border-radius: 13px;
+    font-size: 22px; background: linear-gradient(135deg, var(--c1), var(--c2)); }
+  .row-name { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+  .row-count { flex: none; color: var(--muted); font-size: 15px; }
+  .row-count::after { content: "›"; margin-left: 10px; font-size: 24px; vertical-align: -2px; }
+  .row.new { color: var(--muted); }
+  .row.new .row-icon { border: 2px dashed var(--line); background: none; font-size: 26px; font-weight: 300; }
+
   details { margin-top: 28px; }
   summary { color: var(--muted); cursor: pointer; margin-bottom: 12px; }
-  #hidden-tiles .tile { min-height: 96px; opacity: 0.75; }
+  #hidden-group .tile { min-height: 96px; opacity: 0.75; }
+  #hidden-group .row { opacity: 0.75; }
 
   .add { display: flex; gap: 8px; margin-bottom: 18px; }
   .add input {
@@ -104,8 +127,7 @@
   .empty { margin: 40px 0; text-align: center; color: var(--muted); }
   .empty::before { content: attr(data-icon); display: block; margin-bottom: 8px; font-size: 48px; }
   .done-head { display: flex; align-items: center; justify-content: space-between; margin: 26px 4px 10px; }
-  .done-head h2 { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
-    color: var(--muted); }
+  .done-head h2 { margin: 0; }
   .link { border: 0; background: none; padding: 4px 0; color: var(--c1); font-weight: 600; }
 
   dialog {
@@ -127,6 +149,9 @@
   .choice .swatch { background: linear-gradient(135deg, var(--c1), var(--c2)); }
   .choice input:checked + span { border-color: var(--text); }
   .choice input:focus-visible + span { outline: 2px solid var(--c1); outline-offset: 2px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: -6px 0 16px; }
+  .chip { padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); font-size: 15px; }
+  .chip[aria-pressed="true"] { border-color: transparent; color: #fff; background: linear-gradient(135deg, var(--c1), var(--c2)); }
   .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
   .actions button { min-width: 6rem; height: 44px; padding: 0 18px; border: 1px solid var(--line); border-radius: 14px;
     background: none; font-weight: 600; }
@@ -151,15 +176,21 @@
 <header id="top" class="top">
   <a id="back" class="round" href="#" aria-label="All lists" hidden>‹</a>
   <h1 id="title">Lists</h1>
+  <button id="layout" class="round" type="button">
+    <svg data-layout="rows" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    <svg data-layout="tiles" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2"/>
+      <rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/>
+      <rect x="13" y="13" width="7" height="7" rx="2"/></svg>
+  </button>
   <button id="menu" class="round" type="button" aria-label="List options" hidden>⋯</button>
 </header>
 
 <main>
   <section id="home">
-    <div id="tiles" class="tiles"></div>
+    <div id="groups"></div>
     <details id="hidden-lists" hidden>
       <summary id="hidden-summary"></summary>
-      <div id="hidden-tiles" class="tiles"></div>
+      <div id="hidden-group"></div>
     </details>
   </section>
 
@@ -185,6 +216,11 @@
       <span class="label">Name</span>
       <input id="look-name" name="name" maxlength="40" autocomplete="off" placeholder="For example, Hardware store">
     </label>
+    <label class="field">
+      <span class="label">Category</span>
+      <input id="look-category" name="category" maxlength="30" autocomplete="off" placeholder="None">
+    </label>
+    <div id="categories" class="chips"></div>
     <span class="label">Icon</span>
     <div id="icons" class="choices"></div>
     <span class="label">Color</span>
@@ -200,7 +236,7 @@
 <dialog id="menu-dialog">
   <h2 id="menu-title"></h2>
   <div class="menu">
-    <button id="menu-look" type="button">Icon and color</button>
+    <button id="menu-look" type="button">Edit list</button>
     <button id="menu-hide" type="button"></button>
     <button id="menu-delete" class="danger" type="button">Delete list</button>
   </div>
@@ -230,6 +266,8 @@ const ICONS = ["🛒", "🥦", "🍎", "🍞", "🥩", "🧀", "☕", "🍷", "�
 const COLORS = ["teal", "blue", "indigo", "purple", "pink", "red", "orange", "amber", "green", "slate"];
 let lists = [];
 let items = [];
+// This person's layout of the Lists page: "tiles" or "rows".
+let layout = "tiles";
 // The data of the last render, so a poll that finds no change leaves the page alone.
 let shown = "";
 // Writes in flight. A poll during a write could undo the change already on screen, so polls wait.
@@ -276,15 +314,47 @@ function tile(list) {
     el("span", { className: "tile-count", textContent: countLabel(list) }));
 }
 
+function row(list) {
+  return el("a", { className: `row c-${list.color}`, href: `#${list.entity_id}` },
+    el("span", { className: "row-icon", textContent: list.icon }),
+    el("span", { className: "row-name", textContent: list.name }),
+    el("span", { className: "row-count", textContent: countLabel(list) }));
+}
+
+// Categories in name order, then the lists without one. Case does not split a category.
+function groups(shown) {
+  const byKey = new Map();
+  for (const list of shown) {
+    const key = list.category.toLocaleLowerCase();
+    if (!byKey.has(key)) byKey.set(key, { title: list.category, lists: [] });
+    byKey.get(key).lists.push(list);
+  }
+  const rest = byKey.get("");
+  byKey.delete("");
+  const sorted = [...byKey.values()].sort((a, b) => a.title.localeCompare(b.title));
+  if (rest) sorted.push({ title: sorted.length ? "Other" : "", lists: rest.lists });
+  return sorted;
+}
+
+function categoryNames() {
+  return groups(lists.filter((list) => list.category)).map((group) => group.title);
+}
+
 function renderHome() {
   const hidden = lists.filter((list) => list.hidden);
-  const add = el("button", { type: "button", className: "tile new" },
-    el("span", { className: "tile-icon", textContent: "+" }), el("span", { className: "tile-name", textContent: "New list" }));
+  const kind = layout === "rows" ? "row" : "tile";
+  const make = layout === "rows" ? row : tile;
+  const add = el("button", { type: "button", className: `${kind} new` },
+    el("span", { className: `${kind}-icon`, textContent: "+" }),
+    el("span", { className: `${kind}-name`, textContent: "New list" }));
   add.addEventListener("click", () => openLook(null));
-  $("tiles").replaceChildren(...lists.filter((list) => !list.hidden).map(tile), add);
+  $("groups").replaceChildren(
+    ...groups(lists.filter((list) => !list.hidden)).map(({ title, lists: members }) => el("section", { className: "group" },
+      title ? el("h2", { textContent: title }) : "", el("div", { className: layout }, ...members.map(make)))),
+    el("div", { className: `group ${layout}` }, add));
   $("hidden-lists").hidden = !hidden.length;
   $("hidden-summary").textContent = `Hidden lists (${hidden.length})`;
-  $("hidden-tiles").replaceChildren(...hidden.map(tile));
+  $("hidden-group").replaceChildren(el("div", { className: layout }, ...hidden.map(make)));
 }
 
 function itemRow(item) {
@@ -319,7 +389,7 @@ function renderList(list) {
 
 function render() {
   const list = currentList();
-  const state = JSON.stringify([currentId(), lists, items]);
+  const state = JSON.stringify([currentId(), layout, lists, items]);
   if (state === shown) return;
   shown = state;
   document.body.className = list ? `c-${list.color}` : "";
@@ -327,7 +397,12 @@ function render() {
   $("title").textContent = list ? `${list.icon} ${list.name}` : "Lists";
   document.title = list ? list.name : "Lists";
   for (const id of ["back", "menu", "list"]) $(id).hidden = !list;
-  $("home").hidden = !!list;
+  for (const id of ["home", "layout"]) $(id).hidden = !!list;
+  // The button shows the layout it switches to.
+  const other = layout === "rows" ? "tiles" : "rows";
+  $("layout").ariaLabel = `Show as ${other}`;
+  // SVG elements have no hidden property, only the attribute.
+  for (const icon of $("layout").children) icon.toggleAttribute("hidden", icon.dataset.layout !== other);
   if (list) renderList(list);
   else renderHome();
 }
@@ -382,12 +457,24 @@ function openLook(list) {
   lookFor = list?.entity_id ?? null;
   const used = new Set(lists.map((other) => other.color));
   const color = list?.color ?? COLORS.find((name) => !used.has(name)) ?? COLORS[0];
-  $("look-title").textContent = list ? "Icon and color" : "New list";
+  $("look-title").textContent = list ? `Edit ${list.name}` : "New list";
   $("look-save").textContent = list ? "Save" : "Create";
   $("name-field").hidden = !!list;
   $("look-name").value = "";
   $("look-name").required = !list;
   $("look-error").textContent = "";
+  $("look-category").value = list?.category ?? "";
+  const names = categoryNames();
+  $("categories").replaceChildren(...names.map((name) => {
+    const chip = el("button", { type: "button", className: "chip", textContent: name });
+    chip.addEventListener("click", () => {
+      $("look-category").value = chip.getAttribute("aria-pressed") === "true" ? "" : name;
+      markCategory();
+    });
+    return chip;
+  }));
+  $("categories").hidden = !names.length;
+  markCategory();
   $("icons").replaceChildren(...ICONS.map((icon) =>
     choice("icon", icon, icon === (list?.icon ?? ICONS[0]), el("span", { textContent: icon }))));
   $("colors").replaceChildren(...COLORS.map((name) =>
@@ -396,12 +483,20 @@ function openLook(list) {
   $("look-dialog").showModal();
 }
 
+function markCategory() {
+  const value = $("look-category").value.trim().toLocaleLowerCase();
+  for (const chip of $("categories").children) {
+    chip.setAttribute("aria-pressed", chip.textContent.toLocaleLowerCase() === value);
+  }
+}
+
+$("look-category").addEventListener("input", markCategory);
 $("colors").addEventListener("change", (event) => { $("look-dialog").className = `c-${event.target.value}`; });
 
 $("look-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.target);
-  const look = { icon: form.get("icon"), color: form.get("color") };
+  const look = { icon: form.get("icon"), color: form.get("color"), category: form.get("category") };
   const label = $("look-save").textContent;
   $("look-save").disabled = true;
   $("look-save").textContent = lookFor ? "Saving…" : "Creating…";
@@ -438,7 +533,7 @@ $("clear").addEventListener("click", () => write(
 $("menu").addEventListener("click", () => {
   const list = currentList();
   $("menu-title").textContent = list.name;
-  $("menu-hide").textContent = list.hidden ? "Show on the Lists page" : "Hide from the Lists page";
+  $("menu-hide").textContent = list.hidden ? "Show list" : "Hide list";
   $("menu-delete").hidden = !list.deletable;
   $("menu-note").hidden = list.deletable;
   $("menu-dialog").showModal();
@@ -490,6 +585,16 @@ $("delete-confirm").addEventListener("click", async () => {
   refresh();
 });
 
+$("layout").addEventListener("click", async () => {
+  layout = layout === "rows" ? "tiles" : "rows";
+  render();
+  try {
+    await send("PUT", "api/layout", { layout });
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+});
+
 for (const button of document.querySelectorAll("[data-close]")) {
   button.addEventListener("click", () => button.closest("dialog").close());
 }
@@ -505,6 +610,11 @@ document.addEventListener("visibilitychange", () => {
 setInterval(() => {
   if (!document.hidden) refresh();
 }, POLL_MS);
+try {
+  layout = (await api("api/layout")).layout;
+} catch {
+  // The page stays in tiles. refresh() reports the connection problem.
+}
 refresh();
 </script>
 </body>

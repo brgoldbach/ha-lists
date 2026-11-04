@@ -46,13 +46,15 @@ Home Assistant cannot open an app page at sign-in, so the person opens Home Assi
 
 | To | Do this |
 |---|---|
-| Add a store list | Tap **New list**. Type the name, pick an icon and a color, then tap **Create**. |
+| Add a store list | Tap **New list**. Type the name, pick a category, an icon, and a color, then tap **Create**. |
+| Show lists as rows or tiles | Tap the layout button at the top right of the Lists page. Each person keeps their own choice on all their devices. |
+| Put lists in sections | Give each list a category, for example Stores or Projects. Type a new category, or tap an existing one under the box. The Lists page shows a section for each category in name order. Lists without a category show last, under **Other**. If no list has a category, the page shows no sections. |
 | Add an item | Open the list. Type in **Add an item**, then tap **+** or press Enter. The box stays open for the next item. |
 | Check off an item | Tap the item. It moves to **Got it**. Tap it again to put it back. |
 | Remove an item | Tap **×** on its row. |
 | Remove all checked items | Tap **Clear** next to **Got it**. |
-| Change the icon or color | Open the list. Tap **⋯**, then **Icon and color**. |
-| Hide a list from this page | Tap **⋯**, then **Hide from the Lists page**. Hidden lists show under **Hidden lists** at the bottom of the page. The list stays in Home Assistant. |
+| Change the icon, color, or category | Open the list. Tap **⋯**, then **Edit list**. |
+| Hide a list from this page | Tap **⋯**, then **Hide list**. Hidden lists show under **Hidden lists** at the bottom of the page. The list stays in Home Assistant. To show it again, open it, then tap **⋯** and **Show list**. |
 | Delete a list | Tap **⋯**, then **Delete list**, then **Delete**. |
 
 Deleting a list also deletes all its items. Only a Home Assistant backup brings them back.
@@ -62,6 +64,7 @@ Deleting a list also deletes all its items. Only a Home Assistant backup brings 
 | What | Where |
 |---|---|
 | Lists and items | Home Assistant: `.storage/local_todo.<name>.ics`, one file for each list |
-| Icon, color, and hidden state of each list | The app's `/data/looks.json` |
+| Icon, color, category, and hidden state of each list | The app's `/data/looks.json`. Everyone sees the same. |
+| Tiles or rows, for each person | The app's `/data/layouts.json` |
 
 A Home Assistant backup that includes this app saves both.

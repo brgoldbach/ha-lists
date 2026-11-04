@@ -15,7 +15,7 @@ import server  # noqa: E402
 from fake_ha import TOKEN, FakeHomeAssistant  # noqa: E402
 from server import BadRequest, clean_name, default_look, page_lists, validate_look  # noqa: E402
 
-LOOK = {"icon": "🛒", "color": "teal", "hidden": False}
+LOOK = {"icon": "🛒", "color": "teal", "category": "", "hidden": False}
 
 
 def todo(name, entry_id="entry", open_items=0):
@@ -24,15 +24,16 @@ def todo(name, entry_id="entry", open_items=0):
 
 class ValidateLookTest(unittest.TestCase):
     def test_applies_changes(self):
-        self.assertEqual(validate_look({"icon": " 🔨 ", "hidden": True}, LOOK),
-                         {"icon": "🔨", "color": "teal", "hidden": True})
+        self.assertEqual(validate_look({"icon": " 🔨 ", "category": "  Home   stores ", "hidden": True}, LOOK),
+                         {"icon": "🔨", "color": "teal", "category": "Home stores", "hidden": True})
 
     def test_rejects_unknown_color(self):
         with self.assertRaises(BadRequest):
             validate_look({"color": "beige"}, LOOK)
 
     def test_rejects_unknown_field_and_wrong_type(self):
-        for changes in ({"size": 3}, {"hidden": "yes"}, {"icon": ""}, {"icon": "x" * 9}, ["icon"]):
+        for changes in ({"size": 3}, {"hidden": "yes"}, {"icon": ""}, {"icon": "x" * 9}, {"category": None},
+                        {"category": "x" * 31}, ["icon"]):
             with self.subTest(changes=changes), self.assertRaises(BadRequest):
                 validate_look(changes, LOOK)
 
@@ -57,7 +58,7 @@ class PageListsTest(unittest.TestCase):
     def test_default_look_is_stable_and_stored_look_wins(self):
         self.assertEqual(default_look("todo.lowes"), default_look("todo.lowes"))
         [item] = page_lists([todo("Lowes")], {"todo.lowes": {"icon": "🔨", "color": "blue"}})
-        self.assertEqual((item["icon"], item["color"], item["hidden"]), ("🔨", "blue", False))
+        self.assertEqual((item["icon"], item["color"], item["category"], item["hidden"]), ("🔨", "blue", "", False))
 
 
 class AppTest(unittest.TestCase):
@@ -69,7 +70,8 @@ class AppTest(unittest.TestCase):
         data = tempfile.TemporaryDirectory()
         self.addCleanup(data.cleanup)
         for name, value in (("HA_URL", self.ha.url), ("HA_TOKEN", TOKEN),
-                            ("LOOKS_FILE", Path(data.name) / "looks.json")):
+                            ("LOOKS_FILE", Path(data.name) / "looks.json"),
+                            ("LAYOUTS_FILE", Path(data.name) / "layouts.json")):
             patcher = mock.patch.object(server, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -79,8 +81,9 @@ class AppTest(unittest.TestCase):
         self.addCleanup(app.shutdown)
         self.url = f"http://127.0.0.1:{app.server_port}"
 
-    def call(self, method, path, body=None):
-        request = Request(self.url + path, method=method, data=None if body is None else json.dumps(body).encode())
+    def call(self, method, path, body=None, user=None):
+        request = Request(self.url + path, method=method, data=None if body is None else json.dumps(body).encode(),
+                          headers={"X-Remote-User-Id": user} if user else {})
         try:
             with urlopen(request) as response:
                 return response.status, json.load(response)
@@ -99,11 +102,12 @@ class AppTest(unittest.TestCase):
                          {"todo.shopping_list": ("Shopping list", 1, False), "todo.grocery": ("Grocery", 2, True)})
 
     def test_creates_local_todo_list_with_its_look(self):
-        status, created = self.call("POST", "/api/lists", {"name": " Harbor  Freight ", "icon": "🔧", "color": "red"})
+        status, created = self.call("POST", "/api/lists", {"name": " Harbor  Freight ", "icon": "🔧", "color": "red",
+                                                           "category": "Stores"})
         self.assertEqual(status, 200)
         self.assertEqual(created["entity_id"], "todo.harbor_freight")
         self.assertEqual(self.ha.lists["todo.harbor_freight"]["name"], "Harbor Freight")
-        self.assertEqual((created["icon"], created["color"]), ("🔧", "red"))
+        self.assertEqual((created["icon"], created["color"], created["category"]), ("🔧", "red", "Stores"))
         self.assertEqual(self.lists()["todo.harbor_freight"]["icon"], "🔧")
 
     def test_create_rejects_used_name_and_bad_look(self):
@@ -152,6 +156,18 @@ class AppTest(unittest.TestCase):
         status, look = self.call("PUT", "/api/look", {"entity_id": entity_id, "hidden": True})
         self.assertEqual((status, look["hidden"]), (200, True))
         self.assertTrue(self.lists()[entity_id]["hidden"])
+
+    def test_moves_list_to_category(self):
+        entity_id = self.ha.add_list("Long Term Projects")
+        self.call("PUT", "/api/look", {"entity_id": entity_id, "category": "Projects"})
+        self.assertEqual(self.lists()[entity_id]["category"], "Projects")
+
+    def test_keeps_a_layout_for_each_person(self):
+        self.assertEqual(self.call("GET", "/api/layout", user="a")[1], {"layout": "tiles"})
+        self.assertEqual(self.call("PUT", "/api/layout", {"layout": "rows"}, user="a"), (200, {"layout": "rows"}))
+        self.assertEqual(self.call("GET", "/api/layout", user="a")[1], {"layout": "rows"})
+        self.assertEqual(self.call("GET", "/api/layout", user="b")[1], {"layout": "tiles"})
+        self.assertEqual(self.call("PUT", "/api/layout", {"layout": "grid"}, user="a")[0], 400)
 
     def test_rejects_entity_that_is_not_a_todo_list(self):
         self.assertEqual(self.call("GET", "/api/items?list=light.kitchen")[0], 400)

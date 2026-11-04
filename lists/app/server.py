@@ -2,7 +2,8 @@
 
 The app keeps no items. Each list is a `todo` entity in Home Assistant, and each change goes
 through Home Assistant, so this page and the stock To-do page always show the same lists.
-The app stores only the look of each list: icon, color, and whether the page hides it.
+The app stores only the look of each list (icon, color, category, and whether the page hides it),
+and the layout each person picked.
 
 Related Documentation: DOCS.md.
 """
@@ -21,6 +22,7 @@ from urllib.request import Request, urlopen
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 LOOKS_FILE = DATA_DIR / "looks.json"
+LAYOUTS_FILE = DATA_DIR / "layouts.json"
 INDEX_FILE = Path(__file__).parent / "static" / "index.html"
 PORT = int(os.environ.get("PORT", 8099))
 # Under the Supervisor, Core sees the app as the Supervisor user, which is an admin.
@@ -32,10 +34,13 @@ ENTITY_PATTERN = re.compile(r"todo\.[a-z0-9_]+")
 NAME_MAX = 40
 ITEM_MAX = 200
 ICON_MAX = 8  # characters: one emoji can be several code points
+CATEGORY_MAX = 30
 # Same names as the color classes on the page.
 COLORS = ["teal", "blue", "indigo", "purple", "pink", "red", "orange", "amber", "green", "slate"]
 DEFAULT_ICON = "📝"
-LOOK_FIELDS = {"icon": str, "color": str, "hidden": bool}
+LOOK_FIELDS = {"icon": str, "color": str, "category": str, "hidden": bool}
+# The first one is the default.
+LAYOUTS = ["tiles", "rows"]
 # A list is deletable here only if it is a Local To-do list: its config entry holds that one list.
 LISTS_TEMPLATE = """
 {%- set local = integration_entities('local_todo') -%}
@@ -51,7 +56,7 @@ LISTS_TEMPLATE = """
 # Under the Supervisor, only ingress may connect.
 TRUSTED_CLIENT = "172.30.32.2" if "SUPERVISOR_TOKEN" in os.environ else None
 
-# Held across each read-modify-write of the looks, and across creating or deleting a list.
+# Held across each read-modify-write of a data file, and across creating or deleting a list.
 save_lock = threading.Lock()
 
 
@@ -80,7 +85,8 @@ def load_looks():
 
 def default_look(entity_id):
     # A list made on another page gets a stable color from its entity ID, so new tiles differ without setup.
-    return {"icon": DEFAULT_ICON, "color": COLORS[zlib.crc32(entity_id.encode()) % len(COLORS)], "hidden": False}
+    return {"icon": DEFAULT_ICON, "color": COLORS[zlib.crc32(entity_id.encode()) % len(COLORS)], "category": "",
+            "hidden": False}
 
 
 def validate_look(changes, current):
@@ -90,8 +96,11 @@ def validate_look(changes, current):
         raise BadRequest("Invalid look.")
     look = {**current, **changes}
     look["icon"] = look["icon"].strip()
+    look["category"] = " ".join(look["category"].split())
     if look["color"] not in COLORS or not 0 < len(look["icon"]) <= ICON_MAX:
         raise BadRequest("Invalid look.")
+    if len(look["category"]) > CATEGORY_MAX:
+        raise BadRequest(f"A category can have at most {CATEGORY_MAX} characters.")
     return look
 
 
@@ -197,10 +206,11 @@ def todo_action(service, data):
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        self.route({"/": self.index, "/api/lists": self.get_lists, "/api/items": self.get_items})
+        self.route({"/": self.index, "/api/lists": self.get_lists, "/api/items": self.get_items,
+                    "/api/layout": self.get_layout})
 
     def do_PUT(self):
-        self.route({"/api/look": self.put_look, "/api/items": self.put_item})
+        self.route({"/api/look": self.put_look, "/api/items": self.put_item, "/api/layout": self.put_layout})
 
     def do_POST(self):
         self.route({"/api/lists": self.post_list, "/api/lists/delete": self.post_delete_list,
@@ -245,6 +255,10 @@ class Handler(BaseHTTPRequestHandler):
             raise BadRequest("Body is not a JSON object.")
         return data
 
+    def user(self):
+        # Ingress names the Home Assistant user who views the page. Without the Supervisor, all share one entry.
+        return self.headers.get("X-Remote-User-Id", "")
+
     def index(self, query):
         self.send(200, "text/html; charset=utf-8", INDEX_FILE.read_bytes())
 
@@ -255,7 +269,7 @@ class Handler(BaseHTTPRequestHandler):
         body = self.read_json()
         with save_lock:
             name = clean_name(body.get("name"), fetch_lists())
-            changes = {key: body[key] for key in ("icon", "color") if key in body}
+            changes = {key: body[key] for key in ("icon", "color", "category") if key in body}
             look = validate_look(changes, default_look("todo.new"))
             todo = create_list(name)
             looks = load_looks()
@@ -283,6 +297,19 @@ class Handler(BaseHTTPRequestHandler):
             looks[entity_id] = validate_look(body, {**default_look(entity_id), **looks.get(entity_id, {})})
             save_json(LOOKS_FILE, looks)
         self.send_json(200, looks[entity_id])
+
+    def get_layout(self, query):
+        self.send_json(200, {"layout": load_json(LAYOUTS_FILE, {}).get(self.user(), LAYOUTS[0])})
+
+    def put_layout(self, query):
+        layout = self.read_json().get("layout")
+        if layout not in LAYOUTS:
+            raise BadRequest("Unknown layout.")
+        with save_lock:
+            layouts = load_json(LAYOUTS_FILE, {})
+            layouts[self.user()] = layout
+            save_json(LAYOUTS_FILE, layouts)
+        self.send_json(200, {"layout": layout})
 
     def get_items(self, query):
         self.send_json(200, fetch_items(entity_param(query.get("list", [None])[0])))
