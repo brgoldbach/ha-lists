@@ -751,11 +751,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def put_item(self, query):
         body = self.read_json()
-        uid, done = body.get("uid"), body.get("done")
-        if not isinstance(uid, str) or not uid or not isinstance(done, bool):
-            raise BadRequest("Expected uid and done.")
+        uid = body.get("uid")
+        changes = {}
+        if isinstance(body.get("done"), bool):
+            changes["status"] = "completed" if body["done"] else "needs_action"
+        if "summary" in body:
+            changes["rename"] = clean_summary(body["summary"])
+        if not isinstance(uid, str) or not uid or not changes:
+            raise BadRequest("Expected uid, and done or summary.")
         self.send_json(200, todo_action("update_item", {"entity_id": entity_param(body.get("list")), "item": uid,
-                                                        "status": "completed" if done else "needs_action"}))
+                                                        **changes}))
 
     def post_delete_item(self, query):
         body = self.read_json()

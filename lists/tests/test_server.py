@@ -255,6 +255,16 @@ class AppTest(unittest.TestCase):
         self.assertEqual(self.call("POST", "/api/items/clear", {"list": entity_id})[1], [])
         self.assertEqual(self.ha.lists[entity_id]["items"], [])
 
+    def test_renames_item_and_keeps_its_status(self):
+        entity_id = self.ha.add_list("Grocery", items=["Egs"])
+        item = self.ha.lists[entity_id]["items"][0]
+        item["status"] = "completed"
+        items = self.call("PUT", "/api/items", {"list": entity_id, "uid": item["uid"], "summary": " Eggs "})[1]
+        self.assertEqual((items[0]["summary"], items[0]["status"]), ("Eggs", "completed"))
+        for body in ({"uid": item["uid"], "summary": " "}, {"uid": item["uid"]}, {"uid": item["uid"], "done": "yes"}):
+            with self.subTest(body=body):
+                self.assertEqual(self.call("PUT", "/api/items", {"list": entity_id, **body})[0], 400)
+
     def test_removes_item(self):
         entity_id = self.ha.add_list("Grocery", items=["Eggs", "Bread"])
         uid = self.ha.lists[entity_id]["items"][0]["uid"]

@@ -183,20 +183,21 @@
   .items { list-style: none; margin: 0; padding: 0; overflow: hidden; border-radius: 18px;
     background: var(--card); box-shadow: var(--shadow); }
   .items:empty { display: none; }
-  .items li { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+  .items li { display: flex; align-items: center; min-height: 58px; border-bottom: 1px solid var(--line); }
   .items li:last-child { border-bottom: 0; }
-  .item {
-    flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; min-height: 58px;
-    padding: 10px 4px 10px 16px;
-    border: 0; background: none; font-size: 17px; text-align: left;
-  }
-  .item:disabled { opacity: 0.6; cursor: default; }
-  .check { flex: none; display: grid; place-items: center; width: 26px; height: 26px;
-    border: 2px solid var(--c1); border-radius: 50%; color: var(--ink); font-size: 15px; font-weight: 700; }
-  .item[aria-pressed="true"] .check { background: var(--c1); }
-  .item[aria-pressed="true"] .check::after { content: "✓"; }
-  .item[aria-pressed="true"] .text { color: var(--muted); text-decoration: line-through; }
-  .text { min-width: 0; overflow-wrap: anywhere; }
+  /* The circle checks an item off; its button fills the row's height, so it is easy to hit. The text edits it. */
+  .check { flex: none; align-self: stretch; display: grid; place-items: center; width: 56px; border: 0;
+    background: none; }
+  .circle { display: grid; place-items: center; width: 26px; height: 26px; border: 2px solid var(--c1);
+    border-radius: 50%; color: var(--ink); font-size: 15px; font-weight: 700; }
+  .done .circle { background: var(--c1); }
+  .done .circle::after { content: "✓"; }
+  .text { flex: 1; min-width: 0; padding: 10px 4px; border: 0; background: none; font-size: 17px; text-align: left;
+    overflow-wrap: anywhere; cursor: text; }
+  .done .text { color: var(--muted); text-decoration: line-through; }
+  .check:disabled, .text:disabled { opacity: 0.6; cursor: default; }
+  .edit { flex: 1; min-width: 0; height: 40px; margin: 8px 4px; padding: 0 10px; border: 1px solid var(--c1);
+    border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; font-size: 17px; }
   .note { display: block; font-size: 13px; color: var(--muted); }
   .remove { flex: none; width: 48px; height: 58px; border: 0; background: none; color: var(--muted); font-size: 24px; }
   .empty { margin: 40px 0; text-align: center; color: var(--muted); }
@@ -837,20 +838,48 @@ async function saveOrder(order) {
 
 function itemRow(item) {
   const done = item.status === "completed";
-  const toggle = el("button", { type: "button", className: "item", disabled: !item.uid },
-    el("span", { className: "check" }),
-    el("span", { className: "text", textContent: item.summary },
-      item.description ? el("span", { className: "note", textContent: item.description }) : ""));
-  toggle.setAttribute("aria-pressed", done);
-  toggle.addEventListener("click", () => write(
+  const check = el("button", { type: "button", className: "check", disabled: !item.uid,
+    ariaLabel: `${done ? "Uncheck" : "Check off"} ${item.summary}` }, el("span", { className: "circle" }));
+  check.addEventListener("click", () => write(
     () => { item.status = done ? "needs_action" : "completed"; },
     (list) => send("PUT", "api/items", { list, uid: item.uid, done: !done })));
+  const text = el("button", { type: "button", className: "text", disabled: !item.uid,
+    ariaLabel: `Edit ${item.summary}` },
+    item.summary, item.description ? el("span", { className: "note", textContent: item.description }) : "");
+  text.addEventListener("click", () => editItem(item, text));
   const remove = el("button", { type: "button", className: "remove", ariaLabel: `Remove ${item.summary}`,
     textContent: "×", disabled: !item.uid });
   remove.addEventListener("click", () => write(
     () => { items = items.filter((other) => other !== item); },
     (list) => send("POST", "api/items/delete", { list, uid: item.uid })));
-  return el("li", {}, toggle, remove);
+  return el("li", { className: done ? "done" : "" }, check, text, remove);
+}
+
+// Turns an item's text into a box. Enter or leaving the box saves; Escape, or an empty box, keeps the old text.
+// Polls wait meanwhile, so a redraw does not take the box away.
+function editItem(item, text) {
+  const input = el("input", { className: "edit", value: item.summary, maxLength: 200, ariaLabel: "Item" });
+  let open = true;
+  const finish = (save) => {
+    if (!open) return;
+    open = false;
+    busy--;
+    const summary = input.value.trim();
+    if (save && summary && summary !== item.summary) {
+      write(() => { item.summary = summary; }, (list) => send("PUT", "api/items", { list, uid: item.uid, summary }));
+    } else {
+      shown = "";
+      render();
+    }
+  };
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") finish(true);
+    if (event.key === "Escape") finish(false);
+  });
+  input.addEventListener("blur", () => finish(true));
+  busy++;
+  text.replaceWith(input);
+  input.focus();
 }
 
 function renderList(list) {

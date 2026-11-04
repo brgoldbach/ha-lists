@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.2
+
+- Tap an item's circle to check it off. Tap its text to change it in place: Enter or a tap outside saves, and
+  Escape keeps the old text.
+
 ## 1.1.1
 
 - A smaller Settings sheet: one line for each setting, and shorter notes. Density's first choice is now called

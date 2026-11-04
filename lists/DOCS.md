@@ -75,7 +75,8 @@ Home Assistant cannot open an app page at sign-in, so the person opens Home Assi
 | To | Do this |
 |---|---|
 | Add an item | Open the list. Type in **Add an item**, then tap **+** or press Enter. The box stays open for the next item. |
-| Check off an item | Tap it. It moves to **Got it**. Tap it again to put it back. |
+| Check off an item | Tap its circle. It moves to **Got it**. Tap the circle again to put it back. |
+| Change an item | Tap its text, change it, then press Enter or tap outside the box. Escape keeps the old text. The change also shows in Home Assistant. |
 | Remove an item | Tap **×** on its row. |
 | Remove all checked items | Tap **Clear** next to **Got it**. |
 

@@ -95,7 +95,8 @@ class FakeHomeAssistant:
         elif service in ("update_item", "remove_item") and not matches:
             raise KeyError(f"Item {data.get('item')} not found")
         elif service == "update_item":
-            matches[0]["status"] = data["status"]
+            matches[0].update({"status": data.get("status", matches[0]["status"]),
+                               "summary": data.get("rename", matches[0]["summary"])})
         elif service == "remove_item":
             todo["items"].remove(matches[0])
         elif service == "remove_completed_items":
