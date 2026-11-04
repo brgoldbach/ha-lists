@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1
+
+- A smaller Settings sheet: one line for each setting, and shorter notes. Density's first choice is now called
+  Normal.
+- With Large text on a phone, pop-ups no longer run past the right edge of the screen.
+
 ## 1.1.0
 
 - A Density setting. Compact makes the lists smaller, with smaller text, in rows and in tiles. A row
