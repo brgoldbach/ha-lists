@@ -10,7 +10,7 @@ A Home Assistant app for shared shopping lists, one for each store. It adds a **
 - Changes on either page show on the other within 3 seconds.
 - Any household member creates, renames, and deletes lists, also without an admin account.
 - Large touch targets, an emoji icon from the list's name, a color for each list, light and dark mode.
-- Categories put lists in sections. Each person picks tiles or rows.
+- Categories put lists in sections. Each person picks tiles or rows, item order, text size, and theme.
 
 ## Install
 

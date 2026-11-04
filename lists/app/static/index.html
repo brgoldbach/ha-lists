@@ -6,16 +6,25 @@
 <title>Lists</title>
 <style>
   :root {
+    color-scheme: light;
     --bg: #f3f4f8; --card: #fff; --text: #17181c; --muted: #6b6f7a; --line: #e3e5eb; --danger: #c62828;
     --shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 4px 14px rgb(16 24 40 / 0.08);
     --c1: #0f9d8a; --c2: #34c3a9; --ink: #fff;
   }
+  /* The Theme setting: "device" follows the system, "light" and "dark" override it. */
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
       --bg: #111317; --card: #1b1e24; --text: #eceef2; --muted: #9ba1ad; --line: #2c3038; --danger: #ef5350;
       --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 16px rgb(0 0 0 / 0.35);
     }
   }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #111317; --card: #1b1e24; --text: #eceef2; --muted: #9ba1ad; --line: #2c3038; --danger: #ef5350;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 16px rgb(0 0 0 / 0.35);
+  }
+  :root[data-text="large"] { zoom: 1.18; }
   /* Same names as COLORS in server.py. --ink is the text color on a list color. */
   .c-teal { --c1: #0f9d8a; --c2: #34c3a9; }
   .c-cyan { --c1: #0b8aa8; --c2: #3dbfdc; }
@@ -184,6 +193,14 @@
     --button-hover-background: var(--bg); --button-active-background: var(--line);
   }
   @media (min-width: 480px) { emoji-picker { --num-columns: 9; } }
+  .segmented { display: flex; gap: 6px; margin-bottom: 16px; }
+  .segmented label { flex: 1; }
+  .segmented input { position: absolute; opacity: 0; pointer-events: none; }
+  .segmented span { display: block; padding: 10px 8px; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--bg); font-weight: 600; text-align: center; cursor: pointer; }
+  .segmented input:checked + span { border-color: transparent; color: var(--ink);
+    background: linear-gradient(135deg, var(--c1), var(--c2)); }
+  .segmented input:focus-visible + span { outline: 2px solid var(--c1); outline-offset: 2px; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: -6px 0 16px; }
   .chip { padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); font-size: 15px; }
   .chip[aria-pressed="true"] { border-color: transparent; color: var(--ink); background: linear-gradient(135deg, var(--c1), var(--c2)); }
@@ -211,11 +228,9 @@
 <header id="top" class="top">
   <a id="back" class="round" href="#" aria-label="All lists" hidden>‹</a>
   <h1 id="title">Lists</h1>
-  <button id="layout" class="round" type="button">
-    <svg data-layout="rows" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
-    <svg data-layout="tiles" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2"/>
-      <rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/>
-      <rect x="13" y="13" width="7" height="7" rx="2"/></svg>
+  <button id="settings" class="round" type="button" aria-label="Settings">
+    <svg viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/>
+      <circle cx="9" cy="17" r="2"/></svg>
   </button>
   <button id="menu" class="round" type="button" aria-label="List options" hidden>⋯</button>
 </header>
@@ -292,6 +307,35 @@
   </form>
 </dialog>
 
+<dialog id="settings-dialog">
+  <h2>Settings</h2>
+  <form id="settings-form">
+    <span class="label">Layout</span>
+    <div class="segmented" role="radiogroup" aria-label="Layout">
+      <label><input type="radio" name="layout" value="tiles"><span>Tiles</span></label>
+      <label><input type="radio" name="layout" value="rows"><span>Rows</span></label>
+    </div>
+    <span class="label">Item order</span>
+    <div class="segmented" role="radiogroup" aria-label="Item order">
+      <label><input type="radio" name="order" value="added"><span>As added</span></label>
+      <label><input type="radio" name="order" value="name"><span>A–Z</span></label>
+    </div>
+    <span class="label">Text size</span>
+    <div class="segmented" role="radiogroup" aria-label="Text size">
+      <label><input type="radio" name="text" value="normal"><span>Normal</span></label>
+      <label><input type="radio" name="text" value="large"><span>Large</span></label>
+    </div>
+    <span class="label">Theme</span>
+    <div class="segmented" role="radiogroup" aria-label="Theme">
+      <label><input type="radio" name="theme" value="device"><span>Device</span></label>
+      <label><input type="radio" name="theme" value="light"><span>Light</span></label>
+      <label><input type="radio" name="theme" value="dark"><span>Dark</span></label>
+    </div>
+  </form>
+  <p class="hint">Saved for you, on all your devices.</p>
+  <div class="actions"><button type="button" data-close>Close</button></div>
+</dialog>
+
 <dialog id="menu-dialog">
   <h2 id="menu-title"></h2>
   <div class="menu">
@@ -324,8 +368,8 @@ const COLORS = ["teal", "cyan", "blue", "navy", "indigo", "purple", "magenta", "
   "brown", "lime", "green", "slate", "graphite"];
 let lists = [];
 let items = [];
-// This person's layout of the Lists page: "tiles" or "rows".
-let layout = "tiles";
+// This person's view settings. Same names and choices as SETTINGS in server.py.
+let settings = { layout: "tiles", order: "added", text: "normal", theme: "device" };
 // The data of the last render, so a poll that finds no change leaves the page alone.
 let shown = "";
 // Writes in flight. A poll during a write could undo the change already on screen, so polls wait.
@@ -451,6 +495,7 @@ function categoryNames() {
 
 function renderHome() {
   const hidden = lists.filter((list) => list.hidden);
+  const layout = settings.layout;
   const kind = layout === "rows" ? "row" : "tile";
   const make = layout === "rows" ? row : tile;
   const add = el("button", { type: "button", className: `${kind} new` },
@@ -486,8 +531,10 @@ function itemRow(item) {
 }
 
 function renderList(list) {
-  const open = items.filter((item) => item.status !== "completed");
-  const done = items.filter((item) => item.status === "completed");
+  // A–Z changes only what this page shows; Home Assistant keeps the order the items were added.
+  const sorted = settings.order === "name" ? [...items].sort((a, b) => a.summary.localeCompare(b.summary)) : items;
+  const open = sorted.filter((item) => item.status !== "completed");
+  const done = sorted.filter((item) => item.status === "completed");
   $("open-items").replaceChildren(...open.map(itemRow));
   $("done-items").replaceChildren(...done.map(itemRow));
   $("empty").hidden = open.length > 0;
@@ -499,7 +546,7 @@ function renderList(list) {
 
 function render() {
   const list = currentList();
-  const state = JSON.stringify([currentId(), layout, lists, items]);
+  const state = JSON.stringify([currentId(), settings, lists, items]);
   if (state === shown) return;
   shown = state;
   paint(document.body, list?.color);
@@ -507,12 +554,7 @@ function render() {
   $("title").textContent = list ? list.name : "Lists";
   document.title = list ? list.name : "Lists";
   for (const id of ["back", "menu", "list"]) $(id).hidden = !list;
-  for (const id of ["home", "layout"]) $(id).hidden = !!list;
-  // The button shows the layout it switches to.
-  const other = layout === "rows" ? "tiles" : "rows";
-  $("layout").ariaLabel = `Show as ${other}`;
-  // SVG elements have no hidden property, only the attribute.
-  for (const icon of $("layout").children) icon.toggleAttribute("hidden", icon.dataset.layout !== other);
+  for (const id of ["home", "settings"]) $(id).hidden = !!list;
   if (list) renderList(list);
   else renderHome();
 }
@@ -751,11 +793,24 @@ $("delete-confirm").addEventListener("click", async () => {
   refresh();
 });
 
-$("layout").addEventListener("click", async () => {
-  layout = layout === "rows" ? "tiles" : "rows";
+function applySettings() {
+  document.documentElement.dataset.theme = settings.theme;
+  document.documentElement.dataset.text = settings.text;
+}
+
+$("settings").addEventListener("click", () => {
+  for (const radio of $("settings-form").elements) radio.checked = settings[radio.name] === radio.value;
+  $("settings-dialog").showModal();
+});
+
+// Each change shows at once and saves in the background.
+$("settings-form").addEventListener("change", async (event) => {
+  const { name, value } = event.target;
+  settings = { ...settings, [name]: value };
+  applySettings();
   render();
   try {
-    await send("PUT", "api/layout", { layout });
+    await send("PUT", "api/settings", { [name]: value });
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -792,10 +847,11 @@ setInterval(() => {
   if (!document.hidden) refresh();
 }, POLL_MS);
 try {
-  layout = (await api("api/layout")).layout;
+  settings = await api("api/settings");
 } catch {
-  // The page stays in tiles. refresh() reports the connection problem.
+  // The page keeps the default settings. refresh() reports the connection problem.
 }
+applySettings();
 refresh();
 </script>
 </body>

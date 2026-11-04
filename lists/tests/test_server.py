@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "app"))
 import server  # noqa: E402
 from fake_ha import TOKEN, FakeHomeAssistant  # noqa: E402
 from server import (BadRequest, HomeAssistantError, clean_name, default_look, page_lists, receive_frame,  # noqa: E402
-                    rename_category, validate_look)
+                    rename_category, validate_look, validate_settings)
 
 LOOK = {"color": "teal", "category": "", "hidden": False}
 
@@ -42,6 +42,19 @@ class ValidateLookTest(unittest.TestCase):
         for changes in ({"icon": "🛒"}, {"hidden": "yes"}, {"category": None}, {"category": "x" * 31}, ["color"]):
             with self.subTest(changes=changes), self.assertRaises(BadRequest):
                 validate_look(changes, LOOK)
+
+
+class ValidateSettingsTest(unittest.TestCase):
+    CURRENT = {"layout": "tiles", "order": "added", "text": "normal", "theme": "device"}
+
+    def test_applies_changes(self):
+        self.assertEqual(validate_settings({"layout": "rows", "theme": "dark"}, self.CURRENT),
+                         {**self.CURRENT, "layout": "rows", "theme": "dark"})
+
+    def test_rejects_unknown_setting_and_choice(self):
+        for changes in ({"size": "large"}, {"theme": "blue"}, {"order": ["name"]}, ["layout"]):
+            with self.subTest(changes=changes), self.assertRaises(BadRequest):
+                validate_settings(changes, self.CURRENT)
 
 
 class RenameCategoryTest(unittest.TestCase):
@@ -114,7 +127,7 @@ class AppTest(unittest.TestCase):
         self.addCleanup(data.cleanup)
         for name, value in (("HA_URL", self.ha.url), ("HA_WS_URL", self.ha.ws_url), ("HA_TOKEN", TOKEN),
                             ("LOOKS_FILE", Path(data.name) / "looks.json"),
-                            ("LAYOUTS_FILE", Path(data.name) / "layouts.json")):
+                            ("SETTINGS_FILE", Path(data.name) / "settings.json")):
             patcher = mock.patch.object(server, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -241,12 +254,14 @@ class AppTest(unittest.TestCase):
             self.assertEqual(response.headers.get_content_type(), "text/javascript")
         self.assertEqual(self.call("GET", "/vendor/emoji-picker-element/LICENSE")[0], 404)
 
-    def test_keeps_a_layout_for_each_person(self):
-        self.assertEqual(self.call("GET", "/api/layout", user="a")[1], {"layout": "tiles"})
-        self.assertEqual(self.call("PUT", "/api/layout", {"layout": "rows"}, user="a"), (200, {"layout": "rows"}))
-        self.assertEqual(self.call("GET", "/api/layout", user="a")[1], {"layout": "rows"})
-        self.assertEqual(self.call("GET", "/api/layout", user="b")[1], {"layout": "tiles"})
-        self.assertEqual(self.call("PUT", "/api/layout", {"layout": "grid"}, user="a")[0], 400)
+    def test_keeps_settings_for_each_person(self):
+        defaults = {"layout": "tiles", "order": "added", "text": "normal", "theme": "device"}
+        self.assertEqual(self.call("GET", "/api/settings", user="a")[1], defaults)
+        self.assertEqual(self.call("PUT", "/api/settings", {"layout": "rows"}, user="a")[0], 200)
+        self.assertEqual(self.call("PUT", "/api/settings", {"text": "large"}, user="a")[0], 200)
+        self.assertEqual(self.call("GET", "/api/settings", user="a")[1], {**defaults, "layout": "rows", "text": "large"})
+        self.assertEqual(self.call("GET", "/api/settings", user="b")[1], defaults)
+        self.assertEqual(self.call("PUT", "/api/settings", {"layout": "grid"}, user="a")[0], 400)
 
     def test_rejects_entity_that_is_not_a_todo_list(self):
         self.assertEqual(self.call("GET", "/api/items?list=light.kitchen")[0], 400)

@@ -3,7 +3,7 @@
 The app keeps no items. Each list is a `todo` entity in Home Assistant, and each change goes
 through Home Assistant, so this page and the stock To-do page always show the same lists.
 The app stores only the look of each list (color, category, and whether the page hides it),
-and the layout each person picked.
+and each person's view settings.
 
 Related Documentation: DOCS.md.
 """
@@ -25,7 +25,7 @@ from urllib.request import Request, urlopen
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 LOOKS_FILE = DATA_DIR / "looks.json"
-LAYOUTS_FILE = DATA_DIR / "layouts.json"
+SETTINGS_FILE = DATA_DIR / "settings.json"
 STATIC_DIR = Path(__file__).parent / "static"
 INDEX_FILE = STATIC_DIR / "index.html"
 CONTENT_TYPES = {".js": "text/javascript", ".json": "application/json"}
@@ -49,8 +49,9 @@ COLORS = ["teal", "cyan", "blue", "navy", "indigo", "purple", "magenta", "pink",
           "lime", "green", "slate", "graphite"]
 CUSTOM_COLOR = re.compile(r"#[0-9a-f]{6}")
 LOOK_FIELDS = {"color": str, "category": str, "hidden": bool}
-# The first one is the default.
-LAYOUTS = ["tiles", "rows"]
+# Each person's view settings. The first choice of each is the default.
+SETTINGS = {"layout": ["tiles", "rows"], "order": ["added", "name"], "text": ["normal", "large"],
+            "theme": ["device", "light", "dark"]}
 # A list is deletable here only if it is a Local To-do list: its config entry holds that one list.
 LISTS_TEMPLATE = """
 {%- set local = integration_entities('local_todo') -%}
@@ -118,6 +119,18 @@ def page_lists(todos, looks):
     return [{"entity_id": todo["entity_id"], "name": todo["name"], "open": todo["open"],
              "deletable": todo["entry_id"] is not None, **default_look(todo["entity_id"]),
              **looks.get(todo["entity_id"], {})} for todo in todos]
+
+
+def load_settings(user):
+    return {**{name: choices[0] for name, choices in SETTINGS.items()}, **load_json(SETTINGS_FILE, {}).get(user, {})}
+
+
+def validate_settings(changes, current):
+    """Return `current` with the person's `changes` applied."""
+    if (not isinstance(changes, dict) or not set(changes) <= SETTINGS.keys()
+            or not all(value in SETTINGS[name] for name, value in changes.items())):
+        raise BadRequest("Invalid settings.")
+    return {**current, **changes}
 
 
 def rename_category(looks, old, new):
@@ -288,14 +301,14 @@ def todo_action(service, data):
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.route({"/": self.index, "/api/lists": self.get_lists, "/api/items": self.get_items,
-                    "/api/layout": self.get_layout, **{route: self.get_vendor for route in VENDOR_ROUTES}})
+                    "/api/settings": self.get_settings, **{route: self.get_vendor for route in VENDOR_ROUTES}})
 
     def do_HEAD(self):
         # The emoji picker asks for the ETag of its data with HEAD before it downloads the data again.
         self.route({route: self.get_vendor for route in VENDOR_ROUTES})
 
     def do_PUT(self):
-        self.route({"/api/look": self.put_look, "/api/items": self.put_item, "/api/layout": self.put_layout})
+        self.route({"/api/look": self.put_look, "/api/items": self.put_item, "/api/settings": self.put_settings})
 
     def do_POST(self):
         self.route({"/api/lists": self.post_list, "/api/lists/delete": self.post_delete_list,
@@ -408,18 +421,17 @@ class Handler(BaseHTTPRequestHandler):
             save_json(LOOKS_FILE, rename_category(load_looks(), body.get("from"), body.get("to")))
         self.send_json(200, {"renamed": body["from"]})
 
-    def get_layout(self, query):
-        self.send_json(200, {"layout": load_json(LAYOUTS_FILE, {}).get(self.user(), LAYOUTS[0])})
+    def get_settings(self, query):
+        self.send_json(200, load_settings(self.user()))
 
-    def put_layout(self, query):
-        layout = self.read_json().get("layout")
-        if layout not in LAYOUTS:
-            raise BadRequest("Unknown layout.")
+    def put_settings(self, query):
+        body = self.read_json()
         with save_lock:
-            layouts = load_json(LAYOUTS_FILE, {})
-            layouts[self.user()] = layout
-            save_json(LAYOUTS_FILE, layouts)
-        self.send_json(200, {"layout": layout})
+            settings = validate_settings(body, load_settings(self.user()))
+            everyone = load_json(SETTINGS_FILE, {})
+            everyone[self.user()] = settings
+            save_json(SETTINGS_FILE, everyone)
+        self.send_json(200, settings)
 
     def get_items(self, query):
         self.send_json(200, fetch_items(entity_param(query.get("list", [None])[0])))

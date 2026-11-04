@@ -9,6 +9,6 @@
 - Rename a list from the page, also from non-admin accounts.
 - A color for each list: 16 presets, or any color from the color picker. Hide lists from the page.
 - Categories put lists in sections, for example Stores and Projects. Rename a category from its section heading.
-- Tiles or rows: each person picks a layout, kept on all their devices.
+- Settings for each person, kept on all their devices: tiles or rows, item order, text size, and theme.
 - Changes made on the stock To-do lists page show within 3 seconds.
 - A tap outside a pop-up closes it.
