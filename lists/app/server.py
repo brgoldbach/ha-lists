@@ -23,7 +23,12 @@ from urllib.request import Request, urlopen
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 LOOKS_FILE = DATA_DIR / "looks.json"
 LAYOUTS_FILE = DATA_DIR / "layouts.json"
-INDEX_FILE = Path(__file__).parent / "static" / "index.html"
+STATIC_DIR = Path(__file__).parent / "static"
+INDEX_FILE = STATIC_DIR / "index.html"
+CONTENT_TYPES = {".js": "text/javascript", ".json": "application/json"}
+# Third-party files the page loads: the emoji picker and its emoji data.
+VENDOR_ROUTES = {f"/{path.relative_to(STATIC_DIR)}": path for path in (STATIC_DIR / "vendor").rglob("*")
+                 if path.suffix in CONTENT_TYPES}
 PORT = int(os.environ.get("PORT", 8099))
 # Under the Supervisor, Core sees the app as the Supervisor user, which is an admin.
 # That lets a non-admin person create and delete lists through this app.
@@ -110,6 +115,16 @@ def page_lists(todos, looks):
                     "deletable": todo["entry_id"] is not None,
                     **default_look(todo["entity_id"]), **looks.get(todo["entity_id"], {})} for todo in todos),
                   key=lambda todo: todo["name"].casefold())
+
+
+def rename_category(looks, old, new):
+    """Return `looks` with category `old` renamed to `new` in every list. A blank `new` removes the category."""
+    if not isinstance(old, str) or not old.strip() or not isinstance(new, str):
+        raise BadRequest("Expected from and to.")
+    key = " ".join(old.split()).casefold()
+    return {entity_id: (validate_look({"category": new}, {**default_look(entity_id), **look})
+                        if look.get("category", "").casefold() == key else look)
+            for entity_id, look in looks.items()}
 
 
 def clean_name(name, todos):
@@ -207,15 +222,19 @@ def todo_action(service, data):
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.route({"/": self.index, "/api/lists": self.get_lists, "/api/items": self.get_items,
-                    "/api/layout": self.get_layout})
+                    "/api/layout": self.get_layout, **{route: self.get_vendor for route in VENDOR_ROUTES}})
+
+    def do_HEAD(self):
+        # The emoji picker asks for the ETag of its data with HEAD before it downloads the data again.
+        self.route({route: self.get_vendor for route in VENDOR_ROUTES})
 
     def do_PUT(self):
         self.route({"/api/look": self.put_look, "/api/items": self.put_item, "/api/layout": self.put_layout})
 
     def do_POST(self):
         self.route({"/api/lists": self.post_list, "/api/lists/delete": self.post_delete_list,
-                    "/api/items": self.post_item, "/api/items/delete": self.post_delete_item,
-                    "/api/items/clear": self.post_clear_items})
+                    "/api/categories/rename": self.post_rename_category, "/api/items": self.post_item,
+                    "/api/items/delete": self.post_delete_item, "/api/items/clear": self.post_clear_items})
 
     def route(self, routes):
         if TRUSTED_CLIENT and self.client_address[0] != TRUSTED_CLIENT:
@@ -235,12 +254,15 @@ class Handler(BaseHTTPRequestHandler):
         # The page polls every few seconds, which would fill the app log.
         pass
 
-    def send(self, status, content_type, body):
+    def send(self, status, content_type, body, headers={}):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        for name, value in headers.items():
+            self.send_header(name, value)
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def send_json(self, status, data):
         self.send(status, "application/json", json.dumps(data).encode())
@@ -261,6 +283,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def index(self, query):
         self.send(200, "text/html; charset=utf-8", INDEX_FILE.read_bytes())
+
+    def get_vendor(self, query):
+        path = VENDOR_ROUTES[urlsplit(self.path).path]
+        body = path.read_bytes()
+        self.send(200, CONTENT_TYPES[path.suffix], body,
+                  {"ETag": f'"{zlib.crc32(body):08x}"', "Cache-Control": "max-age=86400"})
 
     def get_lists(self, query):
         self.send_json(200, page_lists(fetch_lists(), load_looks()))
@@ -297,6 +325,12 @@ class Handler(BaseHTTPRequestHandler):
             looks[entity_id] = validate_look(body, {**default_look(entity_id), **looks.get(entity_id, {})})
             save_json(LOOKS_FILE, looks)
         self.send_json(200, looks[entity_id])
+
+    def post_rename_category(self, query):
+        body = self.read_json()
+        with save_lock:
+            save_json(LOOKS_FILE, rename_category(load_looks(), body.get("from"), body.get("to")))
+        self.send_json(200, {"renamed": body["from"]})
 
     def get_layout(self, query):
         self.send_json(200, {"layout": load_json(LAYOUTS_FILE, {}).get(self.user(), LAYOUTS[0])})

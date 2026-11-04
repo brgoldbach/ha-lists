@@ -56,6 +56,9 @@
   .group { margin-bottom: 24px; }
   .group h2, .done-head h2 { margin: 0 4px 10px; font-size: 14px; font-weight: 700; letter-spacing: 0.05em;
     text-transform: uppercase; color: var(--muted); }
+  .rename { display: inline-flex; align-items: center; gap: 6px; padding: 2px 0; border: 0; background: none;
+    font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; }
+  .rename::after { content: "✎"; font-size: 13px; opacity: 0.7; }
 
   .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
   .tile {
@@ -149,6 +152,18 @@
   .choice .swatch { background: linear-gradient(135deg, var(--c1), var(--c2)); }
   .choice input:checked + span { border-color: var(--text); }
   .choice input:focus-visible + span { outline: 2px solid var(--c1); outline-offset: 2px; }
+  .emoji-row { display: flex; gap: 8px; margin-bottom: 16px; }
+  .emoji-row input { flex: 1; min-width: 0; height: 48px; padding: 0 14px; border: 1px solid var(--line);
+    border-radius: 14px; background: var(--bg); color: var(--text); font: inherit; font-size: 17px; }
+  .emoji-row button { flex: none; padding: 0 14px; border: 1px solid var(--line); border-radius: 14px;
+    background: none; font-weight: 600; }
+  emoji-picker {
+    width: 100%; height: min(420px, 60vh); margin-bottom: 8px; --num-columns: 7; --emoji-size: 1.6rem;
+    --background: var(--card); --border-color: var(--line); --border-radius: 14px; --indicator-color: var(--c1);
+    --input-border-color: var(--line); --input-font-color: var(--text); --category-font-color: var(--muted);
+    --button-hover-background: var(--bg); --button-active-background: var(--line);
+  }
+  @media (min-width: 480px) { emoji-picker { --num-columns: 9; } }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: -6px 0 16px; }
   .chip { padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); font-size: 15px; }
   .chip[aria-pressed="true"] { border-color: transparent; color: #fff; background: linear-gradient(135deg, var(--c1), var(--c2)); }
@@ -223,15 +238,38 @@
     <div id="categories" class="chips"></div>
     <span class="label">Icon</span>
     <div id="icons" class="choices"></div>
-    <label class="field">
+    <div class="emoji-row">
       <input id="look-emoji" maxlength="16" autocomplete="off" placeholder="Or type any emoji" aria-label="Any emoji">
-    </label>
+      <button id="all-emoji" type="button">All emoji</button>
+    </div>
     <span class="label">Color</span>
     <div id="colors" class="choices"></div>
     <p id="look-error" class="error"></p>
     <div class="actions">
       <button type="button" data-close>Cancel</button>
       <button id="look-save" class="primary"></button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="emoji-dialog">
+  <h2>Pick an emoji</h2>
+  <div id="emoji-slot"></div>
+  <div class="actions"><button type="button" data-close>Cancel</button></div>
+</dialog>
+
+<dialog id="rename-dialog">
+  <form id="rename-form">
+    <h2>Rename category</h2>
+    <label class="field">
+      <span class="label">Name</span>
+      <input id="rename-input" maxlength="30" autocomplete="off">
+    </label>
+    <p class="hint">Leave it blank to remove the category. Its lists then show under Other.</p>
+    <p id="rename-error" class="error"></p>
+    <div class="actions">
+      <button type="button" data-close>Cancel</button>
+      <button class="primary">Save</button>
     </div>
   </form>
 </dialog>
@@ -277,6 +315,9 @@ let shown = "";
 let busy = 0;
 // The list the look dialog edits, or null when it creates a list.
 let lookFor = null;
+// The category the rename dialog renames.
+let renaming = "";
+let emojiPicker = null;
 let statusTimer;
 
 function el(tag, props = {}, ...children) {
@@ -329,14 +370,26 @@ function groups(shown) {
   const byKey = new Map();
   for (const list of shown) {
     const key = list.category.toLocaleLowerCase();
-    if (!byKey.has(key)) byKey.set(key, { title: list.category, lists: [] });
+    if (!byKey.has(key)) byKey.set(key, { title: list.category, lists: [], named: true });
     byKey.get(key).lists.push(list);
   }
   const rest = byKey.get("");
   byKey.delete("");
   const sorted = [...byKey.values()].sort((a, b) => a.title.localeCompare(b.title));
-  if (rest) sorted.push({ title: sorted.length ? "Other" : "", lists: rest.lists });
+  if (rest) sorted.push({ title: sorted.length ? "Other" : "", lists: rest.lists, named: false });
   return sorted;
+}
+
+function renameButton(category) {
+  const button = el("button", { type: "button", className: "rename", textContent: category,
+    ariaLabel: `Rename ${category}` });
+  button.addEventListener("click", () => {
+    renaming = category;
+    $("rename-input").value = category;
+    $("rename-error").textContent = "";
+    $("rename-dialog").showModal();
+  });
+  return button;
 }
 
 function categoryNames() {
@@ -352,8 +405,9 @@ function renderHome() {
     el("span", { className: `${kind}-name`, textContent: "New list" }));
   add.addEventListener("click", () => openLook(null));
   $("groups").replaceChildren(
-    ...groups(lists.filter((list) => !list.hidden)).map(({ title, lists: members }) => el("section", { className: "group" },
-      title ? el("h2", { textContent: title }) : "", el("div", { className: layout }, ...members.map(make)))),
+    ...groups(lists.filter((list) => !list.hidden)).map(({ title, lists: members, named }) => el("section",
+      { className: "group" }, title ? el("h2", {}, named ? renameButton(title) : title) : "",
+      el("div", { className: layout }, ...members.map(make)))),
     el("div", { className: `group ${layout}` }, add));
   $("hidden-lists").hidden = !hidden.length;
   $("hidden-summary").textContent = `Hidden lists (${hidden.length})`;
@@ -506,6 +560,38 @@ $("look-emoji").addEventListener("input", () => {
   for (const radio of $("icons").querySelectorAll("input")) radio.checked = false;
 });
 $("icons").addEventListener("change", () => { $("look-emoji").value = ""; });
+
+// The picker and its 440 KB of emoji data load only when someone first opens it.
+$("all-emoji").addEventListener("click", async () => {
+  if (!emojiPicker) {
+    try {
+      await import("./vendor/emoji-picker-element/picker.js");
+    } catch (error) {
+      $("look-error").textContent = `The emoji picker did not load: ${error.message}`;
+      return;
+    }
+    emojiPicker = el("emoji-picker");
+    emojiPicker.dataSource = "vendor/emoji-picker-element-data/en/emojibase/data.json";
+    emojiPicker.addEventListener("emoji-click", (event) => {
+      $("look-emoji").value = event.detail.unicode;
+      for (const radio of $("icons").querySelectorAll("input")) radio.checked = false;
+      $("emoji-dialog").close();
+    });
+    $("emoji-slot").append(emojiPicker);
+  }
+  $("emoji-dialog").showModal();
+});
+
+$("rename-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await send("POST", "api/categories/rename", { from: renaming, to: $("rename-input").value });
+    $("rename-dialog").close();
+    await refresh();
+  } catch (error) {
+    $("rename-error").textContent = error.message;
+  }
+});
 $("colors").addEventListener("change", (event) => { $("look-dialog").className = `c-${event.target.value}`; });
 
 $("look-form").addEventListener("submit", async (event) => {

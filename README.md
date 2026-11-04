@@ -40,3 +40,10 @@ To publish an update, raise `version` in [lists/config.yaml](lists/config.yaml) 
 ## License
 
 [MIT](LICENSE)
+
+The app includes, unchanged, two packages under the Apache License 2.0. Their license files are next to them in [lists/app/static/vendor](lists/app/static/vendor):
+
+| Package | Version | Files |
+|---|---|---|
+| [emoji-picker-element](https://github.com/nolanlawson/emoji-picker-element) | 1.29.1 | `picker.js`, `database.js` |
+| [emoji-picker-element-data](https://github.com/nolanlawson/emoji-picker-element-data) | 1.8.0 | `en/emojibase/data.json` |

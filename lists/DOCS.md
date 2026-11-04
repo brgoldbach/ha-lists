@@ -46,7 +46,8 @@ Home Assistant cannot open an app page at sign-in, so the person opens Home Assi
 
 | To | Do this |
 |---|---|
-| Add a store list | Tap **New list**. Type the name, pick a category, an icon, and a color, then tap **Create**. For an icon that is not in the grid, type any emoji in the box under it. |
+| Add a store list | Tap **New list**. Type the name, pick a category, an icon, and a color, then tap **Create**. |
+| Use an emoji that is not in the grid | Tap **All emoji** to search every emoji. Or type one in the box: on a phone, switch the keyboard to emoji; on Windows, press **Win + .**; on a Mac, press **Ctrl + Cmd + Space**. A web page cannot open the emoji keyboard itself. |
 | Show lists as rows or tiles | Tap the layout button at the top right of the Lists page. Each person keeps their own choice on all their devices. |
 | Put lists in sections | Give each list a category, for example Stores or Projects. Type a new category, or tap an existing one under the box. The Lists page shows a section for each category in name order. Lists without a category show last, under **Other**. If no list has a category, the page shows no sections. |
 | Add an item | Open the list. Type in **Add an item**, then tap **+** or press Enter. The box stays open for the next item. |
@@ -54,6 +55,7 @@ Home Assistant cannot open an app page at sign-in, so the person opens Home Assi
 | Remove an item | Tap **×** on its row. |
 | Remove all checked items | Tap **Clear** next to **Got it**. |
 | Change the icon, color, or category | Open the list. Tap **⋯**, then **Edit list**. |
+| Rename a category | Tap the category name above its section (✎). The new name applies to every list in it. Leave the name blank to remove the category. |
 | Hide a list from this page | Tap **⋯**, then **Hide list**. Hidden lists show under **Hidden lists** at the bottom of the page. The list stays in Home Assistant. To show it again, open it, then tap **⋯** and **Show list**. |
 | Delete a list | Tap **⋯**, then **Delete list**, then **Delete**. |
 

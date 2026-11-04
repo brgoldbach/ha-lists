@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "app"))
 
 import server  # noqa: E402
 from fake_ha import TOKEN, FakeHomeAssistant  # noqa: E402
-from server import BadRequest, clean_name, default_look, page_lists, validate_look  # noqa: E402
+from server import BadRequest, clean_name, default_look, page_lists, rename_category, validate_look  # noqa: E402
 
 LOOK = {"icon": "🛒", "color": "teal", "category": "", "hidden": False}
 
@@ -40,6 +40,24 @@ class ValidateLookTest(unittest.TestCase):
                         {"category": "x" * 31}, ["icon"]):
             with self.subTest(changes=changes), self.assertRaises(BadRequest):
                 validate_look(changes, LOOK)
+
+
+class RenameCategoryTest(unittest.TestCase):
+    LOOKS = {"todo.grocery": {**LOOK, "category": "Stores"}, "todo.lowes": {**LOOK, "category": "stores"},
+             "todo.fence": {**LOOK, "category": "Projects"}, "todo.old": {"icon": "🛒", "color": "teal"}}
+
+    def test_renames_in_every_list_whatever_the_case(self):
+        looks = rename_category(self.LOOKS, " STORES ", "Shops")
+        self.assertEqual({entity_id: look.get("category") for entity_id, look in looks.items()},
+                         {"todo.grocery": "Shops", "todo.lowes": "Shops", "todo.fence": "Projects", "todo.old": None})
+
+    def test_blank_name_removes_category(self):
+        self.assertEqual(rename_category(self.LOOKS, "Projects", " ")["todo.fence"]["category"], "")
+
+    def test_rejects_bad_names(self):
+        for old, new in (("", "Shops"), (None, "Shops"), ("Stores", None), ("Stores", "x" * 31)):
+            with self.subTest(old=old, new=new), self.assertRaises(BadRequest):
+                rename_category(self.LOOKS, old, new)
 
 
 class CleanNameTest(unittest.TestCase):
@@ -165,6 +183,24 @@ class AppTest(unittest.TestCase):
         entity_id = self.ha.add_list("Long Term Projects")
         self.call("PUT", "/api/look", {"entity_id": entity_id, "category": "Projects"})
         self.assertEqual(self.lists()[entity_id]["category"], "Projects")
+
+    def test_renames_category(self):
+        entity_id = self.ha.add_list("Grocery")
+        self.call("PUT", "/api/look", {"entity_id": entity_id, "category": "Stores"})
+        self.assertEqual(self.call("POST", "/api/categories/rename", {"from": "Stores", "to": "Shops"})[0], 200)
+        self.assertEqual(self.lists()[entity_id]["category"], "Shops")
+
+    def test_serves_emoji_picker_with_etag(self):
+        path = "/vendor/emoji-picker-element-data/en/emojibase/data.json"
+        with urlopen(self.url + path) as response:
+            etag, body = response.headers["ETag"], response.read()
+            self.assertEqual(response.headers.get_content_type(), "application/json")
+        self.assertGreater(len(json.loads(body)), 1000)
+        with urlopen(Request(self.url + path, method="HEAD")) as response:
+            self.assertEqual((response.headers["ETag"], response.read()), (etag, b""))
+        with urlopen(self.url + "/vendor/emoji-picker-element/picker.js") as response:
+            self.assertEqual(response.headers.get_content_type(), "text/javascript")
+        self.assertEqual(self.call("GET", "/vendor/emoji-picker-element/LICENSE")[0], 404)
 
     def test_keeps_a_layout_for_each_person(self):
         self.assertEqual(self.call("GET", "/api/layout", user="a")[1], {"layout": "tiles"})
