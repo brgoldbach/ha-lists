@@ -15,8 +15,8 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "app"))
 
 import server  # noqa: E402
 from fake_ha import TOKEN, FakeHomeAssistant  # noqa: E402
-from server import (BadRequest, HomeAssistantError, clean_name, default_look, page_lists, receive_frame,  # noqa: E402
-                    rename_category, validate_look, validate_settings)
+from server import (BadRequest, HomeAssistantError, all_categories, clean_name, default_look, page_lists,  # noqa: E402
+                    receive_frame, rename_category, reorder_categories, validate_look, validate_settings)
 
 LOOK = {"color": "teal", "category": "", "hidden": False}
 
@@ -57,22 +57,45 @@ class ValidateSettingsTest(unittest.TestCase):
                 validate_settings(changes, self.CURRENT)
 
 
+class AllCategoriesTest(unittest.TestCase):
+    def test_keeps_order_and_adds_used_categories_once_each(self):
+        looks = {"todo.grocery": {**LOOK, "category": "stores"}, "todo.fence": {**LOOK, "category": "Projects"},
+                 "todo.old": {"color": "teal"}}
+        self.assertEqual(all_categories(["Stores", "Garden"], looks), ["Stores", "Garden", "Projects"])
+
+
+class ReorderCategoriesTest(unittest.TestCase):
+    def test_takes_new_order_with_stored_spelling(self):
+        self.assertEqual(reorder_categories(["Projects", "Stores"], ["stores", "projects"]), ["Stores", "Projects"])
+
+    def test_rejects_order_that_misses_or_adds_a_category(self):
+        for order in (["Stores"], ["Stores", "Projects", "Garden"], ["Stores", "Stores"], "Stores", [1, 2]):
+            with self.subTest(order=order), self.assertRaises(BadRequest):
+                reorder_categories(["Projects", "Stores"], order)
+
+
 class RenameCategoryTest(unittest.TestCase):
     LOOKS = {"todo.grocery": {**LOOK, "category": "Stores"}, "todo.lowes": {**LOOK, "category": "stores"},
              "todo.fence": {**LOOK, "category": "Projects"}, "todo.old": {"color": "teal"}}
+    CATEGORIES = ["Garden", "Projects", "Stores"]
 
     def test_renames_in_every_list_whatever_the_case(self):
-        looks = rename_category(self.LOOKS, " STORES ", "Shops")
+        looks, categories = rename_category(self.LOOKS, self.CATEGORIES, " STORES ", "Shops")
         self.assertEqual({entity_id: look.get("category") for entity_id, look in looks.items()},
                          {"todo.grocery": "Shops", "todo.lowes": "Shops", "todo.fence": "Projects", "todo.old": None})
+        self.assertEqual(categories, ["Garden", "Projects", "Shops"])
+
+    def test_renamed_category_keeps_its_place(self):
+        self.assertEqual(rename_category(self.LOOKS, self.CATEGORIES, "Garden", "Yard")[1], ["Yard", "Projects", "Stores"])
 
     def test_blank_name_removes_category(self):
-        self.assertEqual(rename_category(self.LOOKS, "Projects", " ")["todo.fence"]["category"], "")
+        looks, categories = rename_category(self.LOOKS, self.CATEGORIES, "Projects", " ")
+        self.assertEqual((looks["todo.fence"]["category"], categories), ("", ["Garden", "Stores"]))
 
     def test_rejects_bad_names(self):
         for old, new in (("", "Shops"), (None, "Shops"), ("Stores", None), ("Stores", "x" * 31)):
             with self.subTest(old=old, new=new), self.assertRaises(BadRequest):
-                rename_category(self.LOOKS, old, new)
+                rename_category(self.LOOKS, self.CATEGORIES, old, new)
 
 
 class CleanNameTest(unittest.TestCase):
@@ -127,6 +150,7 @@ class AppTest(unittest.TestCase):
         self.addCleanup(data.cleanup)
         for name, value in (("HA_URL", self.ha.url), ("HA_WS_URL", self.ha.ws_url), ("HA_TOKEN", TOKEN),
                             ("LOOKS_FILE", Path(data.name) / "looks.json"),
+                            ("CATEGORIES_FILE", Path(data.name) / "categories.json"),
                             ("SETTINGS_FILE", Path(data.name) / "settings.json")):
             patcher = mock.patch.object(server, name, value)
             patcher.start()
@@ -148,7 +172,10 @@ class AppTest(unittest.TestCase):
                 return error.code, json.load(error)
 
     def lists(self):
-        return {item["entity_id"]: item for item in self.call("GET", "/api/lists")[1]}
+        return {item["entity_id"]: item for item in self.call("GET", "/api/lists")[1]["lists"]}
+
+    def categories(self):
+        return self.call("GET", "/api/lists")[1]["categories"]
 
     def test_shows_every_todo_list(self):
         self.ha.add_list("Shopping list", local=False, items=["Milk"])
@@ -235,6 +262,26 @@ class AppTest(unittest.TestCase):
         entity_id = self.ha.add_list("Long Term Projects")
         self.call("PUT", "/api/look", {"entity_id": entity_id, "category": "Projects"})
         self.assertEqual(self.lists()[entity_id]["category"], "Projects")
+
+    def test_keeps_category_after_its_last_list_leaves(self):
+        grocery, lowes = self.ha.add_list("Grocery"), self.ha.add_list("Lowes")
+        self.call("PUT", "/api/look", {"entity_id": grocery, "category": "Stores"})
+        self.call("PUT", "/api/look", {"entity_id": lowes, "category": "Hardware"})
+        self.call("PUT", "/api/look", {"entity_id": grocery, "category": ""})
+        self.call("POST", "/api/lists/delete", {"entity_id": lowes})
+        self.assertEqual(self.categories(), ["Stores", "Hardware"])
+        self.call("POST", "/api/categories/rename", {"from": "Stores", "to": ""})
+        self.assertEqual(self.categories(), ["Hardware"])
+
+    def test_reorders_categories(self):
+        grocery, fence = self.ha.add_list("Grocery"), self.ha.add_list("Fence")
+        self.call("PUT", "/api/look", {"entity_id": fence, "category": "Projects"})
+        self.call("PUT", "/api/look", {"entity_id": grocery, "category": "Stores"})
+        self.assertEqual(self.categories(), ["Projects", "Stores"])
+        self.assertEqual(self.call("PUT", "/api/categories", {"order": ["Stores", "Projects"]}),
+                         (200, ["Stores", "Projects"]))
+        self.assertEqual(self.categories(), ["Stores", "Projects"])
+        self.assertEqual(self.call("PUT", "/api/categories", {"order": ["Stores"]})[0], 400)
 
     def test_renames_category(self):
         entity_id = self.ha.add_list("Grocery")

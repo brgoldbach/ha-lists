@@ -76,6 +76,9 @@
   .rename { display: inline-flex; align-items: center; gap: 6px; padding: 2px 0; border: 0; background: none;
     font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; }
   .rename::after { content: "✎"; font-size: 13px; opacity: 0.7; }
+  .group h2 { display: flex; align-items: center; gap: 6px; -webkit-user-select: none; user-select: none; }
+  .grip { cursor: grab; font-size: 16px; letter-spacing: 0; opacity: 0.7; }
+  .marker { height: 4px; margin: -14px 4px 10px; border-radius: 2px; background: var(--c1); }
 
   .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
   .tile {
@@ -372,6 +375,8 @@ const POLL_MS = 3000;
 const COLORS = ["teal", "cyan", "blue", "navy", "indigo", "purple", "magenta", "pink", "red", "orange", "amber",
   "brown", "lime", "green", "slate", "graphite"];
 let lists = [];
+// Every category, also one with no lists, sorted by name.
+let categories = [];
 let items = [];
 // This person's view settings. Same names and choices as SETTINGS in server.py.
 let settings = { layout: "tiles", order: "added", text: "normal", theme: "device" };
@@ -470,9 +475,10 @@ function row(list) {
     el("span", { className: "row-count", textContent: countLabel(list) })), list.color);
 }
 
-// Categories in name order, then the lists without one. Case does not split a category.
+// Every category in its saved order, also an empty one, then the lists without one. Case does not split a
+// category.
 function groups(shown) {
-  const byKey = new Map();
+  const byKey = new Map(categories.map((name) => [name.toLocaleLowerCase(), { title: name, lists: [], named: true }]));
   for (const list of [...shown].sort(byLabel)) {
     const key = list.category.toLocaleLowerCase();
     if (!byKey.has(key)) byKey.set(key, { title: list.category, lists: [], named: true });
@@ -480,15 +486,16 @@ function groups(shown) {
   }
   const rest = byKey.get("");
   byKey.delete("");
-  const sorted = [...byKey.values()].sort((a, b) => a.title.localeCompare(b.title));
-  if (rest) sorted.push({ title: sorted.length ? "Other" : "", lists: rest.lists, named: false });
-  return sorted;
+  const named = [...byKey.values()];
+  if (rest) named.push({ title: named.length ? "Other" : "", lists: rest.lists, named: false });
+  return named;
 }
 
 function renameButton(category) {
   const button = el("button", { type: "button", className: "rename", textContent: category,
     ariaLabel: `Rename ${category}` });
   button.addEventListener("click", () => {
+    if (dropped) return;
     renaming = category;
     $("rename-input").value = category;
     $("rename-error").textContent = "";
@@ -497,20 +504,24 @@ function renameButton(category) {
   return button;
 }
 
-function categoryNames() {
-  return groups(lists.filter((list) => list.category)).map((group) => group.title);
-}
-
 function renderHome() {
   const hidden = lists.filter((list) => list.hidden);
   const layout = settings.layout;
   const make = layout === "rows" ? row : tile;
   $("no-lists").hidden = lists.length > 0;
-  $("groups").replaceChildren(...groups(lists.filter((list) => !list.hidden)).map(({ title, lists: members, named }) => {
-    const section = el("section", { className: "group" }, title ? el("h2", {}, named ? renameButton(title) : title) : "",
-      el("div", { className: layout }, ...members.map((list) => draggable(make(list), list))));
+  const sections = groups(lists.filter((list) => !list.hidden));
+  const movable = sections.filter((group) => group.named).length > 1;
+  $("groups").replaceChildren(...sections.map(({ title, lists: members, named }) => {
+    const heading = title ? el("h2", {}, named ? renameButton(title) : title) : "";
+    const section = el("section", { className: "group" }, heading,
+      members.length ? el("div", { className: layout }, ...members.map((list) => draggable(make(list), list)))
+        : el("div", { className: "zone", textContent: "No lists" }));
     // With categories, each section, "Other" too, takes a dropped list.
     if (title) section.dataset.category = named ? title : "";
+    if (named && movable) {
+      heading.prepend(el("span", { className: "grip", textContent: "⠿", ariaHidden: true }));
+      heading.addEventListener("pointerdown", (event) => pressSection(event, section));
+    }
     return section;
   }));
   $("hidden-lists").hidden = !hidden.length;
@@ -518,11 +529,67 @@ function renderHome() {
   $("hidden-group").replaceChildren(el("div", { className: layout }, ...hidden.map(make)));
 }
 
-// Drag a list onto another section to change its category. A mouse drags as soon as it moves. A finger
-// holds still first, so a swipe still scrolls the page.
+// Lists and sections move by drag. A mouse drags as soon as it moves. A finger holds still first, so a
+// swipe still scrolls the page.
 const HOLD_MS = 400;
 const SLOP_PX = 8;
 const EDGE_PX = 60;
+
+// Drags `node` from the press `event`. `over(x, y)` runs at each move, `drop()` on release, and
+// `cleanUp()` after either a release or a cancel.
+function pressToDrag(event, node, { begin, over, drop, cleanUp }) {
+  if (event.button !== 0) return;
+  const mouse = event.pointerType === "mouse";
+  const start = { x: event.clientX, y: event.clientY };
+  let ghost = null;
+  const lift = () => {
+    const box = node.getBoundingClientRect();
+    ghost = node.cloneNode(true);
+    ghost.classList.add("ghost");
+    Object.assign(ghost.style, { left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px` });
+    document.body.append(ghost);
+    node.classList.add("dragging");
+    busy++;
+    begin?.();
+    navigator.vibrate?.(10);
+  };
+  const hold = mouse ? null : setTimeout(lift, HOLD_MS);
+  const move = (moveEvent) => {
+    if (!ghost) {
+      if (Math.hypot(moveEvent.clientX - start.x, moveEvent.clientY - start.y) <= SLOP_PX) return;
+      // A finger that moves before the hold scrolls the page instead.
+      if (!mouse) return finish();
+      lift();
+    }
+    ghost.style.translate = `${moveEvent.clientX - start.x}px ${moveEvent.clientY - start.y}px`;
+    // The drag blocks normal scrolling, so near the top or bottom edge the page scrolls itself.
+    if (moveEvent.clientY > innerHeight - EDGE_PX) scrollBy(0, 12);
+    else if (moveEvent.clientY < EDGE_PX) scrollBy(0, -12);
+    over(moveEvent.clientX, moveEvent.clientY);
+  };
+  const blockScroll = (touchEvent) => {
+    if (ghost) touchEvent.preventDefault();
+  };
+  const finish = (upEvent) => {
+    clearTimeout(hold);
+    removeEventListener("pointermove", move);
+    removeEventListener("pointerup", finish);
+    removeEventListener("pointercancel", finish);
+    removeEventListener("touchmove", blockScroll);
+    if (!ghost) return;
+    ghost.remove();
+    node.classList.remove("dragging");
+    busy--;
+    dropped = true;
+    setTimeout(() => { dropped = false; });
+    cleanUp?.();
+    if (upEvent?.type === "pointerup") drop();
+  };
+  addEventListener("pointermove", move);
+  addEventListener("pointerup", finish);
+  addEventListener("pointercancel", finish);
+  addEventListener("touchmove", blockScroll, { passive: false });
+}
 
 function draggable(card, list) {
   // A link is natively draggable, and that native drag would cancel this one.
@@ -535,73 +602,75 @@ function draggable(card, list) {
   return card;
 }
 
+// Drag a list onto another section to change its category.
 function pressCard(event, card, list) {
-  if (event.button !== 0 || !$("groups").querySelector("[data-category]")) return;
-  const mouse = event.pointerType === "mouse";
-  const start = { x: event.clientX, y: event.clientY };
-  let ghost = null;
+  if (!$("groups").querySelector("[data-category]")) return;
   let target = null;
-  const begin = () => {
-    const box = card.getBoundingClientRect();
-    ghost = card.cloneNode(true);
-    ghost.classList.add("ghost");
-    Object.assign(ghost.style, { left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px` });
-    document.body.append(ghost);
-    card.classList.add("dragging");
-    busy++;
-    if (!$("groups").querySelector('[data-category=""]')) {
+  pressToDrag(event, card, {
+    begin: () => {
+      if ($("groups").querySelector('[data-category=""]')) return;
       const zone = el("section", { className: "group", id: "other-zone" }, el("h2", { textContent: "Other" }),
         el("div", { className: "zone", textContent: "No category" }));
       zone.dataset.category = "";
       $("groups").append(zone);
-    }
-    navigator.vibrate?.(10);
-  };
-  const hold = mouse ? null : setTimeout(begin, HOLD_MS);
-  const move = (moveEvent) => {
-    if (!ghost) {
-      if (Math.hypot(moveEvent.clientX - start.x, moveEvent.clientY - start.y) <= SLOP_PX) return;
-      // A finger that moves before the hold scrolls the page instead.
-      if (!mouse) return end();
-      begin();
-    }
-    ghost.style.translate = `${moveEvent.clientX - start.x}px ${moveEvent.clientY - start.y}px`;
-    // The drag blocks normal scrolling, so near the top or bottom edge the page scrolls itself.
-    if (moveEvent.clientY > innerHeight - EDGE_PX) scrollBy(0, 12);
-    else if (moveEvent.clientY < EDGE_PX) scrollBy(0, -12);
-    const under = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest("[data-category]");
-    if (under !== target) {
+    },
+    over: (x, y) => {
+      const under = document.elementFromPoint(x, y)?.closest("[data-category]");
+      if (under === target) return;
       target?.classList.remove("drop");
       target = under;
       target?.classList.add("drop");
-    }
-  };
-  const blockScroll = (touchEvent) => {
-    if (ghost) touchEvent.preventDefault();
-  };
-  const end = (upEvent) => {
-    clearTimeout(hold);
-    removeEventListener("pointermove", move);
-    removeEventListener("pointerup", end);
-    removeEventListener("pointercancel", end);
-    removeEventListener("touchmove", blockScroll);
-    if (!ghost) return;
-    ghost.remove();
-    card.classList.remove("dragging");
-    target?.classList.remove("drop");
-    $("other-zone")?.remove();
+    },
+    cleanUp: () => {
+      target?.classList.remove("drop");
+      $("other-zone")?.remove();
+    },
+    drop: () => {
+      const category = target?.dataset.category;
+      if (category !== undefined && category.toLocaleLowerCase() !== list.category.toLocaleLowerCase()) {
+        moveToCategory(list, category);
+      }
+    },
+  });
+}
+
+// Drag a section by its heading to put the categories in another order. "Other" stays last.
+function pressSection(event, section) {
+  const named = [...$("groups").querySelectorAll("[data-category]")].filter((other) => other.dataset.category);
+  const others = named.filter((other) => other !== section);
+  const marker = el("div", { className: "marker" });
+  let index = 0;
+  pressToDrag(event, section, {
+    over: (x, y) => {
+      index = others.findIndex((other) => {
+        const box = other.getBoundingClientRect();
+        return y < box.top + box.height / 2;
+      });
+      if (index < 0) index = others.length;
+      if (index < others.length) others[index].before(marker);
+      else others.at(-1).after(marker);
+    },
+    cleanUp: () => marker.remove(),
+    drop: () => {
+      const order = others.map((other) => other.dataset.category);
+      order.splice(index, 0, section.dataset.category);
+      if (order.join("\n") !== categories.join("\n")) saveOrder(order);
+    },
+  });
+}
+
+async function saveOrder(order) {
+  busy++;
+  categories = order;
+  render();
+  try {
+    categories = await send("PUT", "api/categories", { order });
+  } catch (error) {
+    setStatus(error.message, true);
+  } finally {
     busy--;
-    dropped = true;
-    setTimeout(() => { dropped = false; });
-    const category = upEvent?.type === "pointerup" ? target?.dataset.category : undefined;
-    if (category !== undefined && category.toLocaleLowerCase() !== list.category.toLocaleLowerCase()) {
-      moveToCategory(list, category);
-    }
-  };
-  addEventListener("pointermove", move);
-  addEventListener("pointerup", end);
-  addEventListener("pointercancel", end);
-  addEventListener("touchmove", blockScroll, { passive: false });
+  }
+  refresh();
 }
 
 async function moveToCategory(list, category) {
@@ -653,7 +722,7 @@ function renderList(list) {
 
 function render() {
   const list = currentList();
-  const state = JSON.stringify([currentId(), settings, lists, items]);
+  const state = JSON.stringify([currentId(), settings, lists, categories, items]);
   if (state === shown) return;
   shown = state;
   paint(document.body, list?.color);
@@ -672,9 +741,9 @@ async function refresh() {
     const fresh = await api("api/lists");
     const id = currentId();
     let freshItems = [];
-    if (id && fresh.some((list) => list.entity_id === id)) freshItems = await api(itemsPath(id));
+    if (id && fresh.lists.some((list) => list.entity_id === id)) freshItems = await api(itemsPath(id));
     if (busy || id !== currentId()) return;
-    lists = fresh;
+    ({ lists, categories } = fresh);
     items = freshItems;
     if (id && !currentList()) {
       setStatus("That list was deleted.");
@@ -723,7 +792,7 @@ function openLook(list) {
   $("name-emoji").hidden = !matchMedia("(pointer: fine)").matches;
   $("look-error").textContent = "";
   $("look-category").value = list?.category ?? "";
-  const names = categoryNames();
+  const names = categories;
   $("categories").replaceChildren(...names.map((name) => {
     const chip = el("button", { type: "button", className: "chip", textContent: name });
     chip.addEventListener("click", () => {

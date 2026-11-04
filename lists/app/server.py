@@ -2,8 +2,8 @@
 
 The app keeps no items. Each list is a `todo` entity in Home Assistant, and each change goes
 through Home Assistant, so this page and the stock To-do page always show the same lists.
-The app stores only the look of each list (color, category, and whether the page hides it),
-and each person's view settings.
+The app stores only the look of each list (color, category, and whether the page hides it), the
+categories, and each person's view settings.
 
 Related Documentation: DOCS.md.
 """
@@ -25,6 +25,8 @@ from urllib.request import Request, urlopen
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 LOOKS_FILE = DATA_DIR / "looks.json"
+# A category stays after its last list leaves it, so the app keeps them apart from the looks.
+CATEGORIES_FILE = DATA_DIR / "categories.json"
 SETTINGS_FILE = DATA_DIR / "settings.json"
 STATIC_DIR = Path(__file__).parent / "static"
 INDEX_FILE = STATIC_DIR / "index.html"
@@ -105,13 +107,51 @@ def validate_look(changes, current):
             or not all(isinstance(value, LOOK_FIELDS[key]) for key, value in changes.items())):
         raise BadRequest("Invalid look.")
     look = {**current, **changes}
-    look["category"] = " ".join(look["category"].split())
+    look["category"] = clean_category(look["category"])
     look["color"] = look["color"].lower()
     if look["color"] not in COLORS and not CUSTOM_COLOR.fullmatch(look["color"]):
         raise BadRequest("Invalid look.")
-    if len(look["category"]) > CATEGORY_MAX:
-        raise BadRequest(f"A category can have at most {CATEGORY_MAX} characters.")
     return look
+
+
+def clean_category(category):
+    if not isinstance(category, str):
+        raise BadRequest("Invalid category.")
+    category = " ".join(category.split())
+    if len(category) > CATEGORY_MAX:
+        raise BadRequest(f"A category can have at most {CATEGORY_MAX} characters.")
+    return category
+
+
+def load_categories():
+    return load_json(CATEGORIES_FILE, [])
+
+
+def all_categories(categories, looks):
+    """Return `categories` in their order, then the other categories that `looks` use.
+
+    Each name shows once, whatever its case.
+    """
+    known = {}
+    for name in [*categories, *(look.get("category", "") for look in looks.values())]:
+        if name:
+            known.setdefault(name.casefold(), name)
+    return list(known.values())
+
+
+def reorder_categories(categories, order):
+    """Return `categories` in the order of `order`, which must name each of them once."""
+    by_key = {name.casefold(): name for name in categories}
+    if (not isinstance(order, list) or not all(isinstance(name, str) for name in order)
+            or sorted(name.casefold() for name in order) != sorted(by_key)):
+        raise BadRequest("The categories changed meanwhile. Try again.")
+    return [by_key[name.casefold()] for name in order]
+
+
+def save_looks(looks, categories):
+    """Save `looks`, and every category that `categories` or `looks` name. Call under save_lock."""
+    save_json(LOOKS_FILE, looks)
+    save_json(CATEGORIES_FILE, all_categories(categories, looks))
 
 
 def page_lists(todos, looks):
@@ -133,14 +173,16 @@ def validate_settings(changes, current):
     return {**current, **changes}
 
 
-def rename_category(looks, old, new):
-    """Return `looks` with category `old` renamed to `new` in every list. A blank `new` removes the category."""
-    if not isinstance(old, str) or not old.strip() or not isinstance(new, str):
+def rename_category(looks, categories, old, new):
+    """Return `looks` and `categories` with category `old` renamed to `new`. A blank `new` removes the category."""
+    if not isinstance(old, str) or not old.strip():
         raise BadRequest("Expected from and to.")
     key = " ".join(old.split()).casefold()
-    return {entity_id: (validate_look({"category": new}, {**default_look(entity_id), **look})
-                        if look.get("category", "").casefold() == key else look)
-            for entity_id, look in looks.items()}
+    new = clean_category(new)
+    looks = {entity_id: {**look, "category": new} if look.get("category", "").casefold() == key else look
+             for entity_id, look in looks.items()}
+    # The new name takes the old one's place in the order.
+    return looks, all_categories([new if name.casefold() == key else name for name in categories], looks)
 
 
 def clean_name(name, todos):
@@ -308,7 +350,8 @@ class Handler(BaseHTTPRequestHandler):
         self.route({route: self.get_vendor for route in VENDOR_ROUTES})
 
     def do_PUT(self):
-        self.route({"/api/look": self.put_look, "/api/items": self.put_item, "/api/settings": self.put_settings})
+        self.route({"/api/look": self.put_look, "/api/categories": self.put_categories, "/api/items": self.put_item,
+                    "/api/settings": self.put_settings})
 
     def do_POST(self):
         self.route({"/api/lists": self.post_list, "/api/lists/delete": self.post_delete_list,
@@ -370,7 +413,9 @@ class Handler(BaseHTTPRequestHandler):
                   {"ETag": f'"{zlib.crc32(body):08x}"', "Cache-Control": "max-age=86400"})
 
     def get_lists(self, query):
-        self.send_json(200, page_lists(fetch_lists(), load_looks()))
+        looks = load_looks()
+        self.send_json(200, {"lists": page_lists(fetch_lists(), looks),
+                             "categories": all_categories(load_categories(), looks)})
 
     def post_list(self, query):
         body = self.read_json()
@@ -381,7 +426,7 @@ class Handler(BaseHTTPRequestHandler):
             todo = create_list(name)
             looks = load_looks()
             looks[todo["entity_id"]] = look
-            save_json(LOOKS_FILE, looks)
+            save_looks(looks, load_categories())
         self.send_json(200, page_lists([todo], looks)[0])
 
     def post_rename_list(self, query):
@@ -402,8 +447,10 @@ class Handler(BaseHTTPRequestHandler):
                 raise BadRequest(f"{todo['name']} comes from another integration. Remove it there.")
             ha("DELETE", f"config/config_entries/entry/{todo['entry_id']}")
             looks = load_looks()
-            if looks.pop(entity_id, None):
-                save_json(LOOKS_FILE, looks)
+            # The list's category stays, even when it was the last list in it.
+            categories = all_categories(load_categories(), looks)
+            looks.pop(entity_id, None)
+            save_looks(looks, categories)
         self.send_json(200, {"deleted": entity_id})
 
     def put_look(self, query):
@@ -411,14 +458,25 @@ class Handler(BaseHTTPRequestHandler):
         entity_id = entity_param(body.pop("entity_id", None))
         with save_lock:
             looks = load_looks()
+            # The list's old category stays, even when the list was the last one in it.
+            categories = all_categories(load_categories(), looks)
             looks[entity_id] = validate_look(body, {**default_look(entity_id), **looks.get(entity_id, {})})
-            save_json(LOOKS_FILE, looks)
+            save_looks(looks, categories)
         self.send_json(200, looks[entity_id])
+
+    def put_categories(self, query):
+        order = self.read_json().get("order")
+        with save_lock:
+            categories = reorder_categories(all_categories(load_categories(), load_looks()), order)
+            save_json(CATEGORIES_FILE, categories)
+        self.send_json(200, categories)
 
     def post_rename_category(self, query):
         body = self.read_json()
         with save_lock:
-            save_json(LOOKS_FILE, rename_category(load_looks(), body.get("from"), body.get("to")))
+            looks = load_looks()
+            save_looks(*rename_category(looks, all_categories(load_categories(), looks), body.get("from"),
+                                        body.get("to")))
         self.send_json(200, {"renamed": body["from"]})
 
     def get_settings(self, query):

@@ -48,16 +48,17 @@ Home Assistant cannot open an app page at sign-in, so the person opens Home Assi
 |---|---|
 | Add a store list | Tap **+** at the top right of the Lists page. Type the name, pick a category and a color, then tap **Create**. |
 | Move a list to another section | Drag it onto the section. On a phone, hold the list still for a moment, then drag. Drop it on **Other** to remove its category. |
+| Change the order of the sections | Drag a section by its heading (⠿). On a phone, hold the heading still for a moment, then drag. **Other** always stays last. |
 | Pick a color | Tap one of the 16 colors, or the rainbow swatch for any color. The rainbow opens the device's color picker. On a light color, the list's text turns dark. |
 | Give a list an icon | Put an emoji in its name, for example "🛒 Grocery". The first emoji in the name is the icon, and the page shows the name without it. A list without an emoji shows its first letter. On a phone, use the emoji keyboard. On a computer, put the cursor where the emoji goes, then select **😀** next to the name to search all emoji. A name can have more than one emoji, for example "🛒 Grocery 🥕"; only the first one is the icon. |
 | Change settings | Tap the settings button at the top right of the Lists page. **Layout**: tiles or rows. **Item order**: as added, or A–Z (only on this page; Home Assistant keeps the added order). **Text size**: normal or large. **Theme**: follow the device, light, or dark. Each person keeps their own settings on all their devices. |
-| Put lists in sections | Give each list a category, for example Stores or Projects. Type a new category, or tap an existing one under the box. The Lists page shows a section for each category in name order. Lists without a category show last, under **Other**. If no list has a category, the page shows no sections. |
+| Put lists in sections | Give each list a category, for example Stores or Projects. Type a new category, or tap an existing one under the box. The Lists page shows a section for each category, in the order you set; a new category goes at the end. Lists without a category show last, under **Other**. A category stays, also with no lists in it, until you remove it. If there are no categories, the page shows no sections. |
 | Add an item | Open the list. Type in **Add an item**, then tap **+** or press Enter. The box stays open for the next item. |
 | Check off an item | Tap the item. It moves to **Got it**. Tap it again to put it back. |
 | Remove an item | Tap **×** on its row. |
 | Remove all checked items | Tap **Clear** next to **Got it**. |
 | Rename a list, or change its emoji, color, or category | Open the list. Tap **⋯**, then **Edit list**. A new name also shows on the stock To-do page and to voice assistants. The entity ID stays the same. |
-| Rename a category | Tap the category name above its section (✎). The new name applies to every list in it. Leave the name blank to remove the category. |
+| Rename or remove a category | Tap the category name above its section (✎). The new name applies to every list in it. To remove the category, clear the name; its lists move to **Other**. |
 | Hide a list from this page | Tap **⋯**, then **Hide list**. Hidden lists show under **Hidden lists** at the bottom of the page. The list stays in Home Assistant. To show it again, open it, then tap **⋯** and **Show list**. |
 | Delete a list | Tap **⋯**, then **Delete list**, then **Delete**. |
 
@@ -69,6 +70,7 @@ Deleting a list also deletes all its items. Only a Home Assistant backup brings 
 |---|---|
 | Lists and items | Home Assistant: `.storage/local_todo.<name>.ics`, one file for each list |
 | Color, category, and hidden state of each list | The app's `/data/looks.json`. Everyone sees the same. |
+| Categories, also empty ones | The app's `/data/categories.json`. Everyone sees the same. |
 | Settings, for each person | The app's `/data/settings.json` |
 
 A Home Assistant backup that includes this app saves both.
