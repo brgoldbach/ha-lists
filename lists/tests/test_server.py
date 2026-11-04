@@ -86,7 +86,8 @@ class RenameCategoryTest(unittest.TestCase):
         self.assertEqual(categories, ["Garden", "Projects", "Shops"])
 
     def test_renamed_category_keeps_its_place(self):
-        self.assertEqual(rename_category(self.LOOKS, self.CATEGORIES, "Garden", "Yard")[1], ["Yard", "Projects", "Stores"])
+        self.assertEqual(rename_category(self.LOOKS, self.CATEGORIES, "Garden", "Yard")[1],
+                         ["Yard", "Projects", "Stores"])
 
     def test_blank_name_removes_category(self):
         looks, categories = rename_category(self.LOOKS, self.CATEGORIES, "Projects", " ")
@@ -181,7 +182,8 @@ class AppTest(unittest.TestCase):
         self.ha.add_list("Shopping list", local=False, items=["Milk"])
         self.ha.add_list("Grocery", items=["Eggs", "Bread"])
         lists = self.lists()
-        self.assertEqual({entity_id: (item["name"], item["open"], item["deletable"]) for entity_id, item in lists.items()},
+        self.assertEqual({entity_id: (item["name"], item["open"], item["deletable"])
+                          for entity_id, item in lists.items()},
                          {"todo.shopping_list": ("Shopping list", 1, False), "todo.grocery": ("Grocery", 2, True)})
 
     def test_creates_local_todo_list_with_its_look(self):
@@ -190,7 +192,8 @@ class AppTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(created["entity_id"], "todo.harbor_freight")
         self.assertEqual(self.ha.lists["todo.harbor_freight"]["name"], "🔧 Harbor Freight")
-        self.assertEqual((created["name"], created["color"], created["category"]), ("🔧 Harbor Freight", "red", "Stores"))
+        self.assertEqual((created["name"], created["color"], created["category"]),
+                         ("🔧 Harbor Freight", "red", "Stores"))
         self.assertEqual(self.lists()["todo.harbor_freight"]["color"], "red")
 
     def test_create_reports_name_that_home_assistant_finds_too_close(self):
@@ -306,9 +309,53 @@ class AppTest(unittest.TestCase):
         self.assertEqual(self.call("GET", "/api/settings", user="a")[1], defaults)
         self.assertEqual(self.call("PUT", "/api/settings", {"layout": "rows"}, user="a")[0], 200)
         self.assertEqual(self.call("PUT", "/api/settings", {"text": "large"}, user="a")[0], 200)
-        self.assertEqual(self.call("GET", "/api/settings", user="a")[1], {**defaults, "layout": "rows", "text": "large"})
+        self.assertEqual(self.call("GET", "/api/settings", user="a")[1],
+                         {**defaults, "layout": "rows", "text": "large"})
         self.assertEqual(self.call("GET", "/api/settings", user="b")[1], defaults)
         self.assertEqual(self.call("PUT", "/api/settings", {"layout": "grid"}, user="a")[0], 400)
+
+    def test_export_then_import_into_an_empty_home_assistant(self):
+        grocery = self.ha.add_list("🛒 Grocery", items=["Eggs", "Milk"])
+        self.ha.lists[grocery]["items"][1]["status"] = "completed"
+        self.ha.lists[grocery]["items"][0]["description"] = "A dozen"
+        self.ha.add_list("Shopping list", local=False, items=["Soap"])
+        self.call("PUT", "/api/look", {"entity_id": grocery, "color": "#3a86ff", "category": "Stores"})
+        self.call("PUT", "/api/categories", {"order": ["Stores"]})
+        self.call("PUT", "/api/settings", {"layout": "rows"}, user="a")
+        with urlopen(self.url + "/api/export") as response:
+            self.assertIn("lists.json", response.headers["Content-Disposition"])
+            exported = json.load(response)
+
+        self.ha.lists.clear()
+        for file in (server.LOOKS_FILE, server.CATEGORIES_FILE, server.SETTINGS_FILE):
+            file.unlink()
+        self.assertEqual(self.call("POST", "/api/import", exported), (200, {"lists": 2, "items": 3}))
+
+        items = {item["summary"]: item for item in self.ha.lists["todo.grocery"]["items"]}
+        self.assertEqual((items["Eggs"]["status"], items["Eggs"]["description"], items["Milk"]["status"]),
+                         ("needs_action", "A dozen", "completed"))
+        self.assertEqual([item["summary"] for item in self.ha.lists["todo.shopping_list"]["items"]], ["Soap"])
+        lists = self.lists()
+        self.assertEqual((lists["todo.grocery"]["color"], lists["todo.grocery"]["category"]), ("#3a86ff", "Stores"))
+        self.assertEqual(self.call("GET", "/api/settings", user="a")[1]["layout"], "rows")
+
+    def test_import_adds_only_what_is_missing(self):
+        self.ha.add_list("Grocery", items=["Eggs"])
+        with urlopen(self.url + "/api/export") as response:
+            exported = json.load(response)
+        exported["lists"][0]["items"].append({"summary": "Bread", "status": "needs_action"})
+        exported["lists"].append({"name": "Lowes", "items": []})
+        self.assertEqual(self.call("POST", "/api/import", exported), (200, {"lists": 1, "items": 1}))
+        self.assertEqual(self.call("POST", "/api/import", exported), (200, {"lists": 0, "items": 0}))
+        self.assertEqual([item["summary"] for item in self.ha.lists["todo.grocery"]["items"]], ["Eggs", "Bread"])
+
+    def test_import_rejects_other_files(self):
+        for body in ({"chores": []}, {"version": 2, "lists": []},
+                     {"version": 1, "lists": [{"name": "Grocery", "items": [{"summary": "Eggs", "status": "done"}]}]},
+                     {"version": 1, "lists": [], "settings": {"a": {"theme": "blue"}}}):
+            with self.subTest(body=body):
+                self.assertEqual(self.call("POST", "/api/import", body)[0], 400)
+        self.assertEqual(self.ha.lists, {})
 
     def test_rejects_entity_that_is_not_a_todo_list(self):
         self.assertEqual(self.call("GET", "/api/items?list=light.kitchen")[0], 400)

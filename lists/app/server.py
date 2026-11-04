@@ -46,6 +46,7 @@ ENTITY_PATTERN = re.compile(r"todo\.[a-z0-9_]+")
 NAME_MAX = 40
 ITEM_MAX = 200
 CATEGORY_MAX = 30
+EXPORT_VERSION = 1
 # Same names as the color classes on the page. A custom color from the color wheel is a hex code instead.
 COLORS = ["teal", "cyan", "blue", "navy", "indigo", "purple", "magenta", "pink", "red", "orange", "amber", "brown",
           "lime", "green", "slate", "graphite"]
@@ -54,6 +55,7 @@ LOOK_FIELDS = {"color": str, "category": str, "hidden": bool}
 # Each person's view settings. The first choice of each is the default.
 SETTINGS = {"layout": ["tiles", "rows"], "order": ["added", "name"], "text": ["normal", "large"],
             "theme": ["device", "light", "dark"]}
+DEFAULT_SETTINGS = {name: choices[0] for name, choices in SETTINGS.items()}
 # A list is deletable here only if it is a Local To-do list: its config entry holds that one list.
 LISTS_TEMPLATE = """
 {%- set local = integration_entities('local_todo') -%}
@@ -123,8 +125,9 @@ def clean_category(category):
     return category
 
 
-def load_categories():
-    return load_json(CATEGORIES_FILE, [])
+def load_categories(looks):
+    """Return the saved categories in their order, then any other category that `looks` use."""
+    return all_categories(load_json(CATEGORIES_FILE, []), looks)
 
 
 def all_categories(categories, looks):
@@ -148,8 +151,23 @@ def reorder_categories(categories, order):
     return [by_key[name.casefold()] for name in order]
 
 
+def rename_category(looks, categories, old, new):
+    """Return `looks` and `categories` with category `old` renamed to `new`. A blank `new` removes the category."""
+    if not isinstance(old, str) or not old.strip():
+        raise BadRequest("Expected from and to.")
+    key = " ".join(old.split()).casefold()
+    new = clean_category(new)
+    looks = {entity_id: {**look, "category": new} if look.get("category", "").casefold() == key else look
+             for entity_id, look in looks.items()}
+    # The new name takes the old one's place in the order.
+    return looks, all_categories([new if name.casefold() == key else name for name in categories], looks)
+
+
 def save_looks(looks, categories):
-    """Save `looks`, and every category that `categories` or `looks` name. Call under save_lock."""
+    """Save `looks`, and every category that `categories` or `looks` name. Call under save_lock.
+
+    Pass the categories as they were before the change: a category stays after its last list leaves it.
+    """
     save_json(LOOKS_FILE, looks)
     save_json(CATEGORIES_FILE, all_categories(categories, looks))
 
@@ -162,7 +180,7 @@ def page_lists(todos, looks):
 
 
 def load_settings(user):
-    return {**{name: choices[0] for name, choices in SETTINGS.items()}, **load_json(SETTINGS_FILE, {}).get(user, {})}
+    return {**DEFAULT_SETTINGS, **load_json(SETTINGS_FILE, {}).get(user, {})}
 
 
 def validate_settings(changes, current):
@@ -171,18 +189,6 @@ def validate_settings(changes, current):
             or not all(value in SETTINGS[name] for name, value in changes.items())):
         raise BadRequest("Invalid settings.")
     return {**current, **changes}
-
-
-def rename_category(looks, categories, old, new):
-    """Return `looks` and `categories` with category `old` renamed to `new`. A blank `new` removes the category."""
-    if not isinstance(old, str) or not old.strip():
-        raise BadRequest("Expected from and to.")
-    key = " ".join(old.split()).casefold()
-    new = clean_category(new)
-    looks = {entity_id: {**look, "category": new} if look.get("category", "").casefold() == key else look
-             for entity_id, look in looks.items()}
-    # The new name takes the old one's place in the order.
-    return looks, all_categories([new if name.casefold() == key else name for name in categories], looks)
 
 
 def clean_name(name, todos):
@@ -340,10 +346,83 @@ def todo_action(service, data):
     return fetch_items(data["entity_id"])
 
 
+def export_data():
+    """Return every list with its look and items, the categories in order, and each person's settings."""
+    looks = load_looks()
+    return {"version": EXPORT_VERSION, "categories": load_categories(looks),
+            "lists": [{"name": todo["name"], **{key: todo[key] for key in LOOK_FIELDS},
+                       "items": [{key: item[key] for key in ("summary", "status", "description") if item.get(key)}
+                                 for item in fetch_items(todo["entity_id"])]}
+                      for todo in page_lists(fetch_lists(), looks)],
+            "settings": load_json(SETTINGS_FILE, {})}
+
+
+def clean_import(data):
+    """Return the lists, categories, and settings of `data`, a file from export_data, checked and trimmed."""
+    if not isinstance(data, dict) or data.get("version") != EXPORT_VERSION or not isinstance(data.get("lists"), list):
+        raise BadRequest("Expected a file exported from Lists.")
+    lists = []
+    for entry in data["lists"]:
+        if not isinstance(entry, dict) or not isinstance(entry.get("items"), list):
+            raise BadRequest("Expected a file exported from Lists.")
+        items = []
+        for item in entry["items"]:
+            if (not isinstance(item, dict) or item.get("status") not in ("needs_action", "completed")
+                    or not isinstance(item.get("description", ""), str)):
+                raise BadRequest(f"An item of {entry.get('name')} is not valid.")
+            items.append({"summary": clean_summary(item.get("summary")), "status": item["status"],
+                          "description": item.get("description", "")})
+        lists.append({"name": clean_name(entry.get("name"), []), "items": items,
+                      "look": validate_look({key: entry[key] for key in LOOK_FIELDS if key in entry},
+                                            default_look("todo.import"))})
+    categories = data.get("categories", [])
+    settings = data.get("settings", {})
+    if not isinstance(categories, list) or not isinstance(settings, dict):
+        raise BadRequest("Expected a file exported from Lists.")
+    return (lists, [clean_category(name) for name in categories],
+            {str(user): validate_settings(choices, DEFAULT_SETTINGS) for user, choices in settings.items()})
+
+
+def import_data(lists, categories, settings):
+    """Add the lists and items that Home Assistant lacks. Take the looks, category order, and settings.
+
+    Delete nothing. Return the number of new lists and new items. Call under save_lock.
+    """
+    by_name = {todo["name"].casefold(): todo for todo in fetch_lists()}
+    looks = load_looks()
+    known = load_categories(looks)
+    counts = {"lists": 0, "items": 0}
+    for entry in lists:
+        todo = by_name.get(entry["name"].casefold())
+        if not todo:
+            todo = create_list(entry["name"])
+            counts["lists"] += 1
+        entity_id = todo["entity_id"]
+        looks[entity_id] = entry["look"]
+        have = {item["summary"].casefold() for item in fetch_items(entity_id)}
+        for item in entry["items"]:
+            if item["summary"].casefold() in have:
+                continue
+            # Only a Local To-do list takes a description; the Shopping list, for example, refuses one.
+            described = {"description": item["description"]} if item["description"] and todo["entry_id"] else {}
+            ha("POST", "services/todo/add_item", {"entity_id": entity_id, "item": item["summary"], **described})
+            if item["status"] == "completed":
+                # todo.add_item sets no status. todo.update_item finds the new item by its summary.
+                ha("POST", "services/todo/update_item",
+                   {"entity_id": entity_id, "item": item["summary"], "status": "completed"})
+            have.add(item["summary"].casefold())
+            counts["items"] += 1
+    # The file's category order first, then categories that only this Home Assistant has.
+    save_looks(looks, [*categories, *known])
+    save_json(SETTINGS_FILE, {**load_json(SETTINGS_FILE, {}), **settings})
+    return counts
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.route({"/": self.index, "/api/lists": self.get_lists, "/api/items": self.get_items,
-                    "/api/settings": self.get_settings, **{route: self.get_vendor for route in VENDOR_ROUTES}})
+                    "/api/settings": self.get_settings, "/api/export": self.get_export,
+                    **{route: self.get_vendor for route in VENDOR_ROUTES}})
 
     def do_HEAD(self):
         # The emoji picker asks for the ETag of its data with HEAD before it downloads the data again.
@@ -355,7 +434,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         self.route({"/api/lists": self.post_list, "/api/lists/delete": self.post_delete_list,
-                    "/api/lists/rename": self.post_rename_list, "/api/categories/rename": self.post_rename_category, "/api/items": self.post_item,
+                    "/api/lists/rename": self.post_rename_list, "/api/categories/rename": self.post_rename_category,
+                    "/api/import": self.post_import, "/api/items": self.post_item,
                     "/api/items/delete": self.post_delete_item, "/api/items/clear": self.post_clear_items})
 
     def route(self, routes):
@@ -414,8 +494,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def get_lists(self, query):
         looks = load_looks()
-        self.send_json(200, {"lists": page_lists(fetch_lists(), looks),
-                             "categories": all_categories(load_categories(), looks)})
+        self.send_json(200, {"lists": page_lists(fetch_lists(), looks), "categories": load_categories(looks)})
 
     def post_list(self, query):
         body = self.read_json()
@@ -425,8 +504,9 @@ class Handler(BaseHTTPRequestHandler):
             look = validate_look(changes, default_look("todo.new"))
             todo = create_list(name)
             looks = load_looks()
+            categories = load_categories(looks)
             looks[todo["entity_id"]] = look
-            save_looks(looks, load_categories())
+            save_looks(looks, categories)
         self.send_json(200, page_lists([todo], looks)[0])
 
     def post_rename_list(self, query):
@@ -447,8 +527,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise BadRequest(f"{todo['name']} comes from another integration. Remove it there.")
             ha("DELETE", f"config/config_entries/entry/{todo['entry_id']}")
             looks = load_looks()
-            # The list's category stays, even when it was the last list in it.
-            categories = all_categories(load_categories(), looks)
+            categories = load_categories(looks)
             looks.pop(entity_id, None)
             save_looks(looks, categories)
         self.send_json(200, {"deleted": entity_id})
@@ -458,8 +537,7 @@ class Handler(BaseHTTPRequestHandler):
         entity_id = entity_param(body.pop("entity_id", None))
         with save_lock:
             looks = load_looks()
-            # The list's old category stays, even when the list was the last one in it.
-            categories = all_categories(load_categories(), looks)
+            categories = load_categories(looks)
             looks[entity_id] = validate_look(body, {**default_look(entity_id), **looks.get(entity_id, {})})
             save_looks(looks, categories)
         self.send_json(200, looks[entity_id])
@@ -467,7 +545,7 @@ class Handler(BaseHTTPRequestHandler):
     def put_categories(self, query):
         order = self.read_json().get("order")
         with save_lock:
-            categories = reorder_categories(all_categories(load_categories(), load_looks()), order)
+            categories = reorder_categories(load_categories(load_looks()), order)
             save_json(CATEGORIES_FILE, categories)
         self.send_json(200, categories)
 
@@ -475,9 +553,20 @@ class Handler(BaseHTTPRequestHandler):
         body = self.read_json()
         with save_lock:
             looks = load_looks()
-            save_looks(*rename_category(looks, all_categories(load_categories(), looks), body.get("from"),
-                                        body.get("to")))
-        self.send_json(200, {"renamed": body["from"]})
+            looks, categories = rename_category(looks, load_categories(looks), body.get("from"), body.get("to"))
+            save_looks(looks, categories)
+        self.send_json(200, categories)
+
+    def get_export(self, query):
+        body = json.dumps(export_data(), indent=2, ensure_ascii=False).encode()
+        self.send(200, "application/json; charset=utf-8", body,
+                  {"Content-Disposition": 'attachment; filename="lists.json"'})
+
+    def post_import(self, query):
+        lists, categories, settings = clean_import(self.read_json())
+        with save_lock:
+            counts = import_data(lists, categories, settings)
+        self.send_json(200, counts)
 
     def get_settings(self, query):
         self.send_json(200, load_settings(self.user()))

@@ -76,13 +76,15 @@ class FakeHomeAssistant:
         todo = self.lists.get(data.get("entity_id"))
         if not todo:
             raise KeyError("Unknown entity")
-        matches = [item for item in todo["items"] if item["uid"] == data.get("item")]
+        # Like Home Assistant, the item may be named by its uid or its summary.
+        matches = [item for item in todo["items"] if data.get("item") in (item["uid"], item["summary"])]
         if service == "get_items":
             if not return_response:
                 raise KeyError("Add ?return_response to query parameters.")
             return {"changed_states": [], "service_response": {data["entity_id"]: {"items": todo["items"]}}}
         if service == "add_item":
-            todo["items"].append({"uid": uuid.uuid4().hex, "summary": data["item"], "status": "needs_action"})
+            todo["items"].append({"uid": uuid.uuid4().hex, "summary": data["item"], "status": "needs_action",
+                                  **({"description": data["description"]} if "description" in data else {})})
         elif service in ("update_item", "remove_item") and not matches:
             raise KeyError(f"Item {data.get('item')} not found")
         elif service == "update_item":

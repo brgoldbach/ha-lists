@@ -73,10 +73,10 @@
   .group { margin-bottom: 24px; }
   .group h2, .done-head h2 { margin: 0 4px 10px; font-size: 14px; font-weight: 700; letter-spacing: 0.05em;
     text-transform: uppercase; color: var(--muted); }
+  .group h2 { display: flex; align-items: center; gap: 6px; -webkit-user-select: none; user-select: none; }
   .rename { display: inline-flex; align-items: center; gap: 6px; padding: 2px 0; border: 0; background: none;
     font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; }
   .rename::after { content: "✎"; font-size: 13px; opacity: 0.7; }
-  .group h2 { display: flex; align-items: center; gap: 6px; -webkit-user-select: none; user-select: none; }
   .grip { cursor: grab; font-size: 16px; letter-spacing: 0; opacity: 0.7; }
   .marker { height: 4px; margin: -14px 4px 10px; border-radius: 2px; background: var(--c1); }
 
@@ -84,7 +84,8 @@
   .tile {
     position: relative; overflow: hidden; display: flex; flex-direction: column; min-height: 136px; padding: 16px;
     border: 0; border-radius: 22px; color: var(--ink); text-align: left; text-decoration: none;
-    background: linear-gradient(135deg, var(--c1), var(--c2)); box-shadow: var(--shadow); transition: transform 0.12s;
+    background: linear-gradient(135deg, var(--c1), var(--c2)); box-shadow: var(--shadow);
+    transition: transform 0.12s;
   }
   .tile::after {
     content: ""; position: absolute; top: -28px; right: -28px; width: 100px; height: 100px;
@@ -100,7 +101,8 @@
   .row {
     display: flex; align-items: center; gap: 14px; width: 100%; min-height: 62px; padding: 10px 16px;
     border: 0; border-radius: 18px; font-size: 17px; text-align: left; color: var(--ink); text-decoration: none;
-    background: linear-gradient(135deg, var(--c1), var(--c2)); box-shadow: var(--shadow); transition: transform 0.12s;
+    background: linear-gradient(135deg, var(--c1), var(--c2)); box-shadow: var(--shadow);
+    transition: transform 0.12s;
   }
   .row:active { transform: scale(0.99); }
   .row-icon { flex: none; display: grid; place-items: center; width: 42px; height: 42px; border-radius: 13px;
@@ -129,8 +131,9 @@
     background: var(--card); color: var(--text); font: inherit; font-size: 17px; box-shadow: var(--shadow);
   }
   .add input:focus { outline: 2px solid var(--c1); outline-offset: -1px; }
-  .add button { flex: none; width: 52px; height: 52px; border: 0; border-radius: 16px; color: var(--ink); font-size: 30px;
-    line-height: 1; background: linear-gradient(135deg, var(--c1), var(--c2)); box-shadow: var(--shadow); }
+  .add button { flex: none; width: 52px; height: 52px; border: 0; border-radius: 16px; color: var(--ink);
+    font-size: 30px; line-height: 1; background: linear-gradient(135deg, var(--c1), var(--c2));
+    box-shadow: var(--shadow); }
 
   .items { list-style: none; margin: 0; padding: 0; overflow: hidden; border-radius: 18px;
     background: var(--card); box-shadow: var(--shadow); }
@@ -138,7 +141,8 @@
   .items li { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
   .items li:last-child { border-bottom: 0; }
   .item {
-    flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; min-height: 58px; padding: 10px 4px 10px 16px;
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; min-height: 58px;
+    padding: 10px 4px 10px 16px;
     border: 0; background: none; font-size: 17px; text-align: left;
   }
   .item:disabled { opacity: 0.6; cursor: default; }
@@ -167,14 +171,14 @@
   .field input { width: 100%; height: 48px; padding: 0 14px; border: 1px solid var(--line); border-radius: 14px;
     background: var(--bg); color: var(--text); font: inherit; font-size: 17px; }
   .label { display: block; margin: 0 0 8px; font-size: 14px; font-weight: 600; color: var(--muted); }
-  .choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 6px; margin-bottom: 16px; }
+  .choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 6px;
+    margin-bottom: 16px; }
   .choice { position: relative; }
   .choice input { position: absolute; opacity: 0; pointer-events: none; }
-  .choice span { display: grid; place-items: center; height: 44px; border: 2px solid transparent; border-radius: 12px;
-    background: var(--bg); font-size: 24px; cursor: pointer; }
-  .choice .swatch { background: linear-gradient(135deg, var(--c1), var(--c2)); }
-  .choice input:checked + span { border-color: var(--text); }
-  .choice input:focus-visible + span { outline: 2px solid var(--c1); outline-offset: 2px; }
+  .swatch { display: block; height: 44px; border: 2px solid transparent; border-radius: 12px; cursor: pointer;
+    background: linear-gradient(135deg, var(--c1), var(--c2)); }
+  .choice input:checked + .swatch { border-color: var(--text); }
+  .choice input:focus-visible + .swatch { outline: 2px solid var(--c1); outline-offset: 2px; }
   /* The rainbow shows until someone picks a custom color; then the color itself shows. */
   .custom-color {
     width: 100%; height: 44px; padding: 0; border: 2px solid transparent; border-radius: 12px; cursor: pointer;
@@ -207,9 +211,15 @@
   .segmented input:checked + span { border-color: transparent; color: var(--ink);
     background: linear-gradient(135deg, var(--c1), var(--c2)); }
   .segmented input:focus-visible + span { outline: 2px solid var(--c1); outline-offset: 2px; }
+  .backup { display: flex; gap: 8px; }
+  .backup .button { flex: 1; padding: 10px 8px; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--bg); color: var(--text); font-weight: 600; text-align: center; text-decoration: none;
+    cursor: pointer; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: -6px 0 16px; }
-  .chip { padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); font-size: 15px; }
-  .chip[aria-pressed="true"] { border-color: transparent; color: var(--ink); background: linear-gradient(135deg, var(--c1), var(--c2)); }
+  .chip { padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg);
+    font-size: 15px; }
+  .chip[aria-pressed="true"] { border-color: transparent; color: var(--ink);
+    background: linear-gradient(135deg, var(--c1), var(--c2)); }
   .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
   .actions button { min-width: 6rem; height: 44px; padding: 0 18px; border: 1px solid var(--line); border-radius: 14px;
     background: none; font-weight: 600; }
@@ -273,7 +283,8 @@
     <label class="field">
       <span class="label">Name</span>
       <span class="name-row">
-        <input id="look-name" name="name" maxlength="40" autocomplete="off" required placeholder="For example, 🛒 Grocery">
+        <input id="look-name" name="name" maxlength="40" autocomplete="off" required
+          placeholder="For example, 🛒 Grocery">
         <button id="name-emoji" type="button" aria-label="Pick an emoji" hidden>😀</button>
       </span>
       <span class="note">The first emoji in the name is the list's icon.</span>
@@ -341,6 +352,13 @@
     </div>
   </form>
   <p class="hint">Saved for you, on all your devices.</p>
+  <span class="label">Backup</span>
+  <div class="backup">
+    <a class="button" href="api/export" download="lists.json">Export</a>
+    <label class="button">Import<input id="import-file" type="file" accept=".json,application/json" hidden></label>
+  </div>
+  <p class="hint">Export saves every list, item, color, category, and setting in a file. Import adds what is missing
+    and takes the colors, categories, and settings from the file. It never deletes.</p>
   <div class="actions"><button type="button" data-close>Close</button></div>
 </dialog>
 
@@ -375,7 +393,7 @@ const POLL_MS = 3000;
 const COLORS = ["teal", "cyan", "blue", "navy", "indigo", "purple", "magenta", "pink", "red", "orange", "amber",
   "brown", "lime", "green", "slate", "graphite"];
 let lists = [];
-// Every category, also one with no lists, sorted by name.
+// Every category in its saved order, also one with no lists.
 let categories = [];
 let items = [];
 // This person's view settings. Same names and choices as SETTINGS in server.py.
@@ -420,10 +438,11 @@ function setStatus(text, isError = false) {
   if (text) statusTimer = setTimeout(() => setStatus(""), 6000);
 }
 
+const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
 function countLabel(list) {
   if (list.open === null) return "Unavailable";
-  if (list.open === 0) return "All set";
-  return list.open === 1 ? "1 item" : `${list.open} items`;
+  return list.open === 0 ? "All set" : plural(list.open, "item");
 }
 
 // Light custom colors get dark text, so names stay readable.
@@ -486,9 +505,9 @@ function groups(shown) {
   }
   const rest = byKey.get("");
   byKey.delete("");
-  const named = [...byKey.values()];
-  if (rest) named.push({ title: named.length ? "Other" : "", lists: rest.lists, named: false });
-  return named;
+  const sections = [...byKey.values()];
+  if (rest) sections.push({ title: sections.length ? "Other" : "", lists: rest.lists, named: false });
+  return sections;
 }
 
 function renameButton(category) {
@@ -743,7 +762,8 @@ async function refresh() {
     let freshItems = [];
     if (id && fresh.lists.some((list) => list.entity_id === id)) freshItems = await api(itemsPath(id));
     if (busy || id !== currentId()) return;
-    ({ lists, categories } = fresh);
+    lists = fresh.lists;
+    categories = fresh.categories;
     items = freshItems;
     if (id && !currentList()) {
       setStatus("That list was deleted.");
@@ -781,6 +801,21 @@ function choice(name, value, checked, content) {
     el("input", { type: "radio", name, value, checked, ariaLabel: value }), content);
 }
 
+// The look dialog's color: a preset name, or a hex code from the color wheel.
+function pickColor(color) {
+  lookColor = color;
+  for (const radio of $("colors").querySelectorAll("input[type=radio]")) radio.checked = radio.value === color;
+  $("colors").querySelector(".custom-color").classList.toggle("picked", color.startsWith("#"));
+  paint($("look-dialog"), color);
+}
+
+function markCategory() {
+  const value = $("look-category").value.trim().toLocaleLowerCase();
+  for (const chip of $("categories").children) {
+    chip.setAttribute("aria-pressed", chip.textContent.toLocaleLowerCase() === value);
+  }
+}
+
 function openLook(list) {
   lookFor = list?.entity_id ?? null;
   const used = new Set(lists.map((other) => other.color));
@@ -792,8 +827,7 @@ function openLook(list) {
   $("name-emoji").hidden = !matchMedia("(pointer: fine)").matches;
   $("look-error").textContent = "";
   $("look-category").value = list?.category ?? "";
-  const names = categories;
-  $("categories").replaceChildren(...names.map((name) => {
+  $("categories").replaceChildren(...categories.map((name) => {
     const chip = el("button", { type: "button", className: "chip", textContent: name });
     chip.addEventListener("click", () => {
       $("look-category").value = chip.getAttribute("aria-pressed") === "true" ? "" : name;
@@ -801,7 +835,7 @@ function openLook(list) {
     });
     return chip;
   }));
-  $("categories").hidden = !names.length;
+  $("categories").hidden = !categories.length;
   markCategory();
   const custom = el("input", { type: "color", className: "custom-color", ariaLabel: "Any color",
     value: color.startsWith("#") ? color : "#3a86ff" });
@@ -809,13 +843,6 @@ function openLook(list) {
     choice("color", name, false, paint(el("span", { className: "swatch" }), name))), custom);
   pickColor(color);
   $("look-dialog").showModal();
-}
-
-function markCategory() {
-  const value = $("look-category").value.trim().toLocaleLowerCase();
-  for (const chip of $("categories").children) {
-    chip.setAttribute("aria-pressed", chip.textContent.toLocaleLowerCase() === value);
-  }
 }
 
 // Puts the picked emoji where the cursor was in the name, with a space on each side.
@@ -829,7 +856,58 @@ function insertEmoji(emoji) {
   input.setSelectionRange(caret, caret);
 }
 
+function applySettings() {
+  document.documentElement.dataset.theme = settings.theme;
+  document.documentElement.dataset.text = settings.text;
+}
+
+$("new-list").addEventListener("click", () => openLook(null));
+
+$("settings").addEventListener("click", () => {
+  for (const radio of $("settings-form").elements) radio.checked = settings[radio.name] === radio.value;
+  $("settings-dialog").showModal();
+});
+
+// Each change shows at once and saves in the background.
+$("settings-form").addEventListener("change", async (event) => {
+  const { name, value } = event.target;
+  settings = { ...settings, [name]: value };
+  applySettings();
+  render();
+  try {
+    await send("PUT", "api/settings", { [name]: value });
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+});
+
+$("import-file").addEventListener("change", async () => {
+  const file = $("import-file").files[0];
+  $("import-file").value = "";
+  if (!file) return;
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    return setStatus("Import failed: the file is not JSON.", true);
+  }
+  setStatus("Importing…");
+  try {
+    const counts = await send("POST", "api/import", data);
+    settings = await api("api/settings");
+    applySettings();
+    $("settings-dialog").close();
+    setStatus(`Imported ${plural(counts.lists, "new list")} and ${plural(counts.items, "new item")}.`);
+  } catch (error) {
+    setStatus(`Import failed: ${error.message}`, true);
+  }
+  refresh();
+});
+
 $("look-category").addEventListener("input", markCategory);
+
+// A preset swatch and the color wheel both send input events, with a name or a hex code.
+$("colors").addEventListener("input", (event) => pickColor(event.target.value));
 
 // The picker and its 440 KB of emoji data load only when someone first opens it.
 $("name-emoji").addEventListener("click", async () => {
@@ -851,27 +929,6 @@ $("name-emoji").addEventListener("click", async () => {
   }
   $("emoji-dialog").showModal();
 });
-
-$("rename-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  try {
-    await send("POST", "api/categories/rename", { from: renaming, to: $("rename-input").value });
-    $("rename-dialog").close();
-    await refresh();
-  } catch (error) {
-    $("rename-error").textContent = error.message;
-  }
-});
-// The look dialog's color: a preset name, or a hex code from the color wheel.
-function pickColor(color) {
-  lookColor = color;
-  for (const radio of $("colors").querySelectorAll("input[type=radio]")) radio.checked = radio.value === color;
-  $("colors").querySelector(".custom-color").classList.toggle("picked", color.startsWith("#"));
-  paint($("look-dialog"), color);
-}
-
-// A preset swatch and the color wheel both send input events, with a name or a hex code.
-$("colors").addEventListener("input", (event) => pickColor(event.target.value));
 
 $("look-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -898,6 +955,17 @@ $("look-form").addEventListener("submit", async (event) => {
   } finally {
     $("look-save").disabled = false;
     $("look-save").textContent = label;
+  }
+});
+
+$("rename-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await send("POST", "api/categories/rename", { from: renaming, to: $("rename-input").value });
+    $("rename-dialog").close();
+    await refresh();
+  } catch (error) {
+    $("rename-error").textContent = error.message;
   }
 });
 
@@ -934,7 +1002,8 @@ $("menu-hide").addEventListener("click", async () => {
   try {
     await send("PUT", "api/look", { entity_id: list.entity_id, hidden: !list.hidden });
     if (!list.hidden) location.hash = "";
-    setStatus(list.hidden ? `${list.name} is back on the Lists page.` : `${list.name} is hidden. Find it under Hidden lists.`);
+    setStatus(list.hidden ? `${list.name} is back on the Lists page.`
+      : `${list.name} is hidden. Find it under Hidden lists.`);
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -967,31 +1036,6 @@ $("delete-confirm").addEventListener("click", async () => {
     $("delete-confirm").disabled = false;
   }
   refresh();
-});
-
-function applySettings() {
-  document.documentElement.dataset.theme = settings.theme;
-  document.documentElement.dataset.text = settings.text;
-}
-
-$("new-list").addEventListener("click", () => openLook(null));
-
-$("settings").addEventListener("click", () => {
-  for (const radio of $("settings-form").elements) radio.checked = settings[radio.name] === radio.value;
-  $("settings-dialog").showModal();
-});
-
-// Each change shows at once and saves in the background.
-$("settings-form").addEventListener("change", async (event) => {
-  const { name, value } = event.target;
-  settings = { ...settings, [name]: value };
-  applySettings();
-  render();
-  try {
-    await send("PUT", "api/settings", { [name]: value });
-  } catch (error) {
-    setStatus(error.message, true);
-  }
 });
 
 for (const button of document.querySelectorAll("[data-close]")) {
