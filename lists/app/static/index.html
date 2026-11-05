@@ -225,18 +225,23 @@
     background: linear-gradient(135deg, var(--c1), var(--c2)); }
   .choice input:checked + .swatch { border-color: var(--text); }
   .choice input:focus-visible + .swatch { outline: 2px solid var(--c1); outline-offset: 2px; }
-  /* The rainbow shows until someone picks a custom color; then the color itself shows. */
-  .custom-color {
-    width: 100%; height: 44px; padding: 0; border: 2px solid transparent; border-radius: 12px; cursor: pointer;
-    background: conic-gradient(#f44336, #ffeb3b, #4caf50, #00bcd4, #3f51b5, #e91e63, #f44336);
-    -webkit-appearance: none; appearance: none;
-  }
-  .custom-color.picked { border-color: var(--text); }
-  .custom-color::-webkit-color-swatch-wrapper { padding: 0; }
-  .custom-color::-webkit-color-swatch { border: 0; border-radius: 10px; opacity: 0; }
-  .custom-color.picked::-webkit-color-swatch { opacity: 1; }
-  .custom-color::-moz-color-swatch { border: 0; border-radius: 10px; opacity: 0; }
-  .custom-color.picked::-moz-color-swatch { opacity: 1; }
+  /* The rainbow shows until someone picks a color in the color field; then that color shows. */
+  #rainbow { width: 100%; padding: 0; }
+  #rainbow:not(.picked) { background: conic-gradient(#f44336, #ffeb3b, #4caf50, #00bcd4, #3f51b5, #e91e63, #f44336); }
+  #rainbow.picked { border-color: var(--text); }
+  /* Hue runs across, and light to dark runs down: the same colors as fieldColor() makes. */
+  #color-field { position: relative; height: 140px; margin-bottom: 8px; border-radius: 12px; cursor: crosshair;
+    touch-action: none;
+    background: linear-gradient(rgb(255 255 255 / 0.64), transparent 50%, rgb(0 0 0 / 0.64)),
+      linear-gradient(to right, hsl(0 75% 50%), hsl(60 75% 50%), hsl(120 75% 50%), hsl(180 75% 50%),
+        hsl(240 75% 50%), hsl(300 75% 50%), hsl(360 75% 50%)); }
+  #color-marker { position: absolute; width: 28px; height: 28px; margin: -14px 0 0 -14px; border: 3px solid #fff;
+    border-radius: 50%; background: var(--c1); box-shadow: 0 0 0 1px rgb(0 0 0 / 0.4); pointer-events: none; }
+  #save-color { display: block; width: 100%; margin: 0 0 12px; padding: 10px 8px; border: 1px solid var(--line);
+    border-radius: 12px; background: var(--bg); font-weight: 600; }
+  /* A dot of the color that the button saves or removes. */
+  #save-color::before { content: ""; display: inline-block; width: 14px; height: 14px; margin-right: 8px;
+    border-radius: 50%; background: var(--c1); vertical-align: -2px; }
   .name-row { display: flex; gap: 8px; }
   .name-row input { flex: 1; min-width: 0; }
   .name-row button { flex: none; width: 48px; height: 48px; border: 1px solid var(--line); border-radius: 14px;
@@ -357,6 +362,8 @@
     <div id="categories" class="chips"></div>
     <span class="label">Color</span>
     <div id="colors" class="choices"></div>
+    <div id="color-field" hidden><span id="color-marker" hidden></span></div>
+    <button id="save-color" type="button" hidden></button>
     <p id="look-error" class="error"></p>
     <div class="actions">
       <button type="button" data-close>Cancel</button>
@@ -471,6 +478,8 @@ let categories = [];
 let order = [];
 // This person's favorite lists, by entity ID.
 let favorites = [];
+// Colors from the color field that someone saved, as hex codes. The same for everyone.
+let savedColors = [];
 // What the app's self-check found wrong in Home Assistant, or "".
 let problem = "";
 let items = [];
@@ -928,7 +937,7 @@ async function refresh() {
     let freshItems = [];
     if (id && fresh.lists.some((list) => list.entity_id === id)) freshItems = await api(itemsPath(id));
     if (busy || id !== currentId()) return;
-    ({ lists, categories, order, favorites, problem } = fresh);
+    ({ lists, categories, order, favorites, saved_colors: savedColors, problem } = fresh);
     items = freshItems;
     if (id && !currentList()) {
       setStatus("That list was deleted.");
@@ -966,12 +975,62 @@ function choice(name, value, checked, content) {
     el("input", { type: "radio", name, value, checked, ariaLabel: value }), content);
 }
 
-// The look dialog's color: a preset name, or a hex code from the color wheel.
+// The look dialog's color: a preset name, or a hex code, saved or from the color field.
 function pickColor(color) {
   lookColor = color;
   for (const radio of $("colors").querySelectorAll("input[type=radio]")) radio.checked = radio.value === color;
-  $("colors").querySelector(".custom-color").classList.toggle("picked", color.startsWith("#"));
+  $("rainbow").classList.toggle("picked", color.startsWith("#") && !savedColors.includes(color));
   paint($("look-dialog"), color);
+  markSaveButton();
+}
+
+// The button saves a custom color or removes a saved one. While the color field is open, it waits for a pick there.
+function markSaveButton() {
+  const waiting = !$("color-field").hidden && $("color-marker").hidden;
+  $("save-color").hidden = !lookColor.startsWith("#") || waiting;
+  $("save-color").textContent = savedColors.includes(lookColor) ? "Remove this color" : "Save this color";
+}
+
+function closeField() {
+  $("color-field").hidden = true;
+  $("color-marker").hidden = true;
+}
+
+// The presets, then the saved colors, then the rainbow that shows and hides the color field.
+function showColors() {
+  const rainbow = el("button", { type: "button", id: "rainbow", className: "swatch", ariaLabel: "Any color" });
+  rainbow.addEventListener("click", () => {
+    if ($("color-field").hidden) $("color-field").hidden = false;
+    else closeField();
+    markSaveButton();
+  });
+  $("colors").replaceChildren(...[...COLORS, ...savedColors].map((color) =>
+    choice("color", color, false, paint(el("span", { className: "swatch" }), color))), rainbow);
+  pickColor(lookColor);
+}
+
+// The color at a point of the color field, given as fractions across and down: hue 0 to 360 across, lightness
+// 82 % to 18 % down, and saturation 75 %. The field's CSS gradients draw the same colors.
+function fieldColor(across, down) {
+  const hue = across * 360;
+  const light = 0.82 - down * 0.64;
+  const spread = 0.75 * Math.min(light, 1 - light);
+  // The standard HSL to RGB formula, for red, green, and blue.
+  const channel = (offset) => {
+    const step = (offset + hue / 30) % 12;
+    return light - spread * Math.max(-1, Math.min(step - 3, 9 - step, 1));
+  };
+  return `#${[0, 8, 4].map((offset) => Math.round(channel(offset) * 255).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function pickFromField(event) {
+  const box = $("color-field").getBoundingClientRect();
+  const across = Math.min(Math.max((event.clientX - box.left) / box.width, 0), 1);
+  const down = Math.min(Math.max((event.clientY - box.top) / box.height, 0), 1);
+  $("color-marker").hidden = false;
+  $("color-marker").style.left = `${across * 100}%`;
+  $("color-marker").style.top = `${down * 100}%`;
+  pickColor(fieldColor(across, down));
 }
 
 function markCategory() {
@@ -1002,11 +1061,9 @@ function openLook(list) {
   }));
   $("categories").hidden = !categories.length;
   markCategory();
-  const custom = el("input", { type: "color", className: "custom-color", ariaLabel: "Any color",
-    value: color.startsWith("#") ? color : "#3a86ff" });
-  $("colors").replaceChildren(...COLORS.map((name) =>
-    choice("color", name, false, paint(el("span", { className: "swatch" }), name))), custom);
-  pickColor(color);
+  lookColor = color;
+  closeField();
+  showColors();
   $("look-dialog").showModal();
 }
 
@@ -1074,8 +1131,34 @@ $("import-file").addEventListener("change", async () => {
 
 $("look-category").addEventListener("input", markCategory);
 
-// A preset swatch and the color wheel both send input events, with a name or a hex code.
-$("colors").addEventListener("input", (event) => pickColor(event.target.value));
+// A tap on a preset or a saved color picks it and closes the color field.
+$("colors").addEventListener("input", (event) => {
+  closeField();
+  pickColor(event.target.value);
+});
+
+// A touch in the color field picks a color, and a drag moves through the colors.
+$("color-field").addEventListener("pointerdown", (event) => {
+  $("color-field").setPointerCapture(event.pointerId);
+  pickFromField(event);
+});
+$("color-field").addEventListener("pointermove", (event) => {
+  if ($("color-field").hasPointerCapture(event.pointerId)) pickFromField(event);
+});
+
+// A saved color shows next to the presets, for everyone. A list keeps its color when that color is no longer saved.
+$("save-color").addEventListener("click", async () => {
+  const colors = savedColors.includes(lookColor) ? savedColors.filter((color) => color !== lookColor)
+    : [...savedColors, lookColor];
+  try {
+    savedColors = await send("PUT", "api/colors", { colors });
+  } catch (error) {
+    $("look-error").textContent = error.message;
+    return;
+  }
+  closeField();
+  showColors();
+});
 
 // The picker and its 440 KB of emoji data load only when someone first opens it.
 $("name-emoji").addEventListener("click", async () => {

@@ -3,7 +3,7 @@
 The app keeps no items. Each list is a `todo` entity in Home Assistant, and each change goes
 through Home Assistant, so this page and the stock To-do page always show the same lists.
 The app stores only the look of each list (color, category, and whether the page hides it), the
-categories, the order of the lists, and each person's favorites and view settings.
+categories, the order of the lists, the saved colors, and each person's favorites and view settings.
 
 Related Documentation: DOCS.md.
 """
@@ -33,6 +33,9 @@ SETTINGS_FILE = DATA_DIR / "settings.json"
 ORDER_FILE = DATA_DIR / "order.json"
 FAVORITES_FILE = DATA_DIR / "favorites.json"
 ORDER_MAX = 1000
+# Colors from the color field that someone saved next to the presets, the same for everyone.
+SAVED_COLORS_FILE = DATA_DIR / "colors.json"
+SAVED_COLORS_MAX = 16
 STATIC_DIR = Path(__file__).parent / "static"
 INDEX_FILE = STATIC_DIR / "index.html"
 CONTENT_TYPES = {".js": "text/javascript", ".json": "application/json"}
@@ -58,7 +61,7 @@ NOTIFICATION_ID = "lists_app"
 # What the app uses from Home Assistant. The self-check reports any of them that an update takes away.
 REQUIRED_ACTIONS = {"todo": {"add_item", "update_item", "remove_item", "remove_completed_items", "get_items"},
                     "persistent_notification": {"create", "dismiss"}}
-# Same names as the color classes on the page. A custom color from the color wheel is a hex code instead.
+# Same names as the color classes on the page. A custom color from the color field is a hex code instead.
 COLORS = ["teal", "cyan", "blue", "navy", "indigo", "purple", "magenta", "pink", "red", "orange", "amber", "brown",
           "lime", "green", "slate", "graphite"]
 CUSTOM_COLOR = re.compile(r"#[0-9a-f]{6}")
@@ -214,6 +217,17 @@ def set_favorite(favorites, entity_id, favorite):
     """Return `favorites` with `entity_id` added at the end, or removed."""
     favorites = [other for other in favorites if other != entity_id]
     return [*favorites, entity_id] if favorite else favorites
+
+
+def clean_colors(colors):
+    """Return `colors`, a list of saved custom colors, in lower case and without repeats."""
+    if not isinstance(colors, list) or not all(isinstance(color, str) and CUSTOM_COLOR.fullmatch(color.lower())
+                                               for color in colors):
+        raise BadRequest("Invalid colors.")
+    colors = list(dict.fromkeys(color.lower() for color in colors))
+    if len(colors) > SAVED_COLORS_MAX:
+        raise BadRequest(f"You can save at most {SAVED_COLORS_MAX} colors.")
+    return colors
 
 
 def load_settings(user):
@@ -404,7 +418,7 @@ def export_data():
                                  for item in fetch_items(todo["entity_id"])]}
                       for todo in todos],
             "favorites": {user: named(entity_ids) for user, entity_ids in load_json(FAVORITES_FILE, {}).items()},
-            "settings": load_json(SETTINGS_FILE, {})}
+            "settings": load_json(SETTINGS_FILE, {}), "saved_colors": load_json(SAVED_COLORS_FILE, [])}
 
 
 def name_list(value):
@@ -437,12 +451,13 @@ def clean_import(data):
     return {"lists": lists, "categories": [clean_category(name) for name in name_list(data.get("categories", []))],
             "order": name_list(data.get("order", [])),
             "favorites": {str(user): name_list(names) for user, names in favorites.items()},
-            "settings": {str(user): validate_settings(choices, DEFAULT_SETTINGS) for user, choices in settings.items()}}
+            "settings": {str(user): validate_settings(choices, DEFAULT_SETTINGS) for user, choices in settings.items()},
+            "saved_colors": clean_colors(data.get("saved_colors", []))}
 
 
 def import_data(data):
-    """Add the lists and items of `data` that Home Assistant lacks. Take the looks, the orders, the favorites, and
-    the settings.
+    """Add the lists and items of `data` that Home Assistant lacks. Take the looks, the orders, the favorites, the
+    settings, and the saved colors.
 
     Delete nothing. Return the number of new lists and new items, and the names of the lists that Home Assistant
     did not create. Call under save_lock.
@@ -486,6 +501,8 @@ def import_data(data):
     save_json(FAVORITES_FILE, {**load_json(FAVORITES_FILE, {}),
                                **{user: entity_ids(names) for user, names in data["favorites"].items()}})
     save_json(SETTINGS_FILE, {**load_json(SETTINGS_FILE, {}), **data["settings"]})
+    saved_colors = dict.fromkeys([*data["saved_colors"], *load_json(SAVED_COLORS_FILE, [])])
+    save_json(SAVED_COLORS_FILE, list(saved_colors)[:SAVED_COLORS_MAX])
     return counts
 
 
@@ -494,7 +511,7 @@ def find_problem():
 
     Raise Unreachable when Home Assistant does not answer.
     """
-    for path in (LOOKS_FILE, CATEGORIES_FILE, ORDER_FILE, FAVORITES_FILE, SETTINGS_FILE):
+    for path in (LOOKS_FILE, CATEGORIES_FILE, ORDER_FILE, FAVORITES_FILE, SETTINGS_FILE, SAVED_COLORS_FILE):
         try:
             load_json(path, None)
         except ValueError:
@@ -561,7 +578,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         self.route({"/api/look": self.put_look, "/api/categories": self.put_categories, "/api/order": self.put_order,
-                    "/api/favorites": self.put_favorites, "/api/items": self.put_item,
+                    "/api/favorites": self.put_favorites, "/api/colors": self.put_colors, "/api/items": self.put_item,
                     "/api/settings": self.put_settings})
 
     def do_POST(self):
@@ -635,7 +652,8 @@ class Handler(BaseHTTPRequestHandler):
         looks = load_looks()
         self.send_json(200, {"lists": page_lists(fetch_lists(), looks), "categories": load_categories(looks),
                              "order": load_json(ORDER_FILE, []),
-                             "favorites": load_json(FAVORITES_FILE, {}).get(self.user(), []), "problem": problem})
+                             "favorites": load_json(FAVORITES_FILE, {}).get(self.user(), []),
+                             "saved_colors": load_json(SAVED_COLORS_FILE, []), "problem": problem})
 
     def post_list(self, query):
         body = self.read_json()
@@ -709,6 +727,12 @@ class Handler(BaseHTTPRequestHandler):
             everyone[self.user()] = set_favorite(everyone.get(self.user(), []), entity_id, favorite)
             save_json(FAVORITES_FILE, everyone)
         self.send_json(200, everyone[self.user()])
+
+    def put_colors(self, query):
+        colors = clean_colors(self.read_json().get("colors"))
+        with save_lock:
+            save_json(SAVED_COLORS_FILE, colors)
+        self.send_json(200, colors)
 
     def post_rename_category(self, query):
         body = self.read_json()

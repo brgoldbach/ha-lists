@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.4
+
+- A color field replaces the device's color picker. Tap the rainbow swatch, then tap or drag in the field.
+- **Save this color** keeps a color from the field next to the 16 colors, for everyone. **Remove this color**
+  takes it away again.
+
 ## 1.1.3
 
 - In the Home Assistant iOS app, the page no longer stays blank until a tap.

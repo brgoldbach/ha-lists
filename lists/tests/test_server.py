@@ -15,8 +15,8 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "app"))
 
 import server  # noqa: E402
 from fake_ha import TOKEN, FakeHomeAssistant  # noqa: E402
-from server import (BadRequest, HomeAssistantError, Unreachable, all_categories, clean_name, clean_order,  # noqa: E402
-                    default_look, page_lists, receive_frame, rename_category, reorder_categories, set_favorite,
+from server import (BadRequest, HomeAssistantError, Unreachable, all_categories, clean_colors, clean_name,  # noqa: E402
+                    clean_order, default_look, page_lists, receive_frame, rename_category, reorder_categories, set_favorite,
                     validate_look, validate_settings)
 
 LOOK = {"color": "teal", "category": "", "hidden": False}
@@ -57,6 +57,16 @@ class OrderAndFavoritesTest(unittest.TestCase):
     def test_favorite_goes_last_and_comes_off(self):
         self.assertEqual(set_favorite(["todo.a", "todo.b"], "todo.a", True), ["todo.b", "todo.a"])
         self.assertEqual(set_favorite(["todo.a", "todo.b"], "todo.a", False), ["todo.b"])
+
+
+class CleanColorsTest(unittest.TestCase):
+    def test_lowers_case_and_drops_repeats(self):
+        self.assertEqual(clean_colors(["#3A86FF", "#3a86ff", "#ff006e"]), ["#3a86ff", "#ff006e"])
+
+    def test_rejects_bad_colors_and_too_many(self):
+        for colors in ("#3a86ff", ["teal"], ["#3a86f"], [None], [f"#0000{index:02x}" for index in range(17)]):
+            with self.subTest(colors=colors), self.assertRaises(BadRequest):
+                clean_colors(colors)
 
 
 class ValidateSettingsTest(unittest.TestCase):
@@ -176,7 +186,8 @@ class AppTest(unittest.TestCase):
                             ("CATEGORIES_FILE", Path(data.name) / "categories.json"),
                             ("SETTINGS_FILE", Path(data.name) / "settings.json"),
                             ("ORDER_FILE", Path(data.name) / "order.json"),
-                            ("FAVORITES_FILE", Path(data.name) / "favorites.json")):
+                            ("FAVORITES_FILE", Path(data.name) / "favorites.json"),
+                            ("SAVED_COLORS_FILE", Path(data.name) / "colors.json")):
             patcher = mock.patch.object(server, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -345,6 +356,12 @@ class AppTest(unittest.TestCase):
         self.assertEqual(self.call("POST", "/api/categories/rename", {"from": "Stores", "to": "Shops"})[0], 200)
         self.assertEqual(self.lists()[entity_id]["category"], "Shops")
 
+    def test_keeps_saved_colors_for_everyone(self):
+        self.assertEqual(self.call("GET", "/api/lists")[1]["saved_colors"], [])
+        self.assertEqual(self.call("PUT", "/api/colors", {"colors": ["#3A86FF"]}, user="a"), (200, ["#3a86ff"]))
+        self.assertEqual(self.call("GET", "/api/lists", user="b")[1]["saved_colors"], ["#3a86ff"])
+        self.assertEqual(self.call("PUT", "/api/colors", {"colors": ["teal"]})[0], 400)
+
     def test_serves_emoji_picker_with_etag(self):
         path = "/vendor/emoji-picker-element-data/en/emojibase/data.json"
         with urlopen(self.url + path) as response:
@@ -378,6 +395,7 @@ class AppTest(unittest.TestCase):
         self.call("PUT", "/api/order", {"order": ["todo.shopping_list", grocery]})
         self.call("PUT", "/api/favorites", {"entity_id": grocery, "favorite": True}, user="a")
         self.call("PUT", "/api/settings", {"layout": "rows"}, user="a")
+        self.call("PUT", "/api/colors", {"colors": ["#ff006e"]})
         with urlopen(self.url + "/api/export") as response:
             self.assertIn("lists.json", response.headers["Content-Disposition"])
             exported = json.load(response)
@@ -385,7 +403,8 @@ class AppTest(unittest.TestCase):
                                                                       {"a": ["🛒 Grocery"]}))
 
         self.ha.lists.clear()
-        for name in ("LOOKS_FILE", "CATEGORIES_FILE", "SETTINGS_FILE", "ORDER_FILE", "FAVORITES_FILE"):
+        for name in ("LOOKS_FILE", "CATEGORIES_FILE", "SETTINGS_FILE", "ORDER_FILE", "FAVORITES_FILE",
+                     "SAVED_COLORS_FILE"):
             getattr(server, name).unlink()
         self.assertEqual(self.call("POST", "/api/import", exported), (200, {"lists": 2, "items": 3, "skipped": []}))
 
@@ -397,8 +416,8 @@ class AppTest(unittest.TestCase):
         self.assertEqual((lists["todo.grocery"]["color"], lists["todo.grocery"]["category"]), ("#3a86ff", "Stores"))
         self.assertEqual(self.call("GET", "/api/settings", user="a")[1]["layout"], "rows")
         reply = self.call("GET", "/api/lists", user="a")[1]
-        self.assertEqual((reply["order"], reply["favorites"]),
-                         (["todo.shopping_list", "todo.grocery"], ["todo.grocery"]))
+        self.assertEqual((reply["order"], reply["favorites"], reply["saved_colors"]),
+                         (["todo.shopping_list", "todo.grocery"], ["todo.grocery"], ["#ff006e"]))
 
     def test_import_adds_only_what_is_missing(self):
         self.ha.add_list("Grocery", items=["Eggs"])

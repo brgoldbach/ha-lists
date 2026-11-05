@@ -64,7 +64,8 @@ Home Assistant cannot open an app page at sign-in, so the person opens Home Assi
 | Add a list | Tap **+** at the top right of the Lists page. Type the name, pick a category and a color, then tap **Create**. |
 | Give a list an icon | Put an emoji in its name, for example "🛒 Grocery". The first emoji is the icon, and the page shows the name without it. A name can have more emoji, for example "🛒 Grocery 🥕". A list without an emoji shows its first letter. |
 | Type an emoji | On a phone, use the emoji keyboard. On a computer, put the cursor where the emoji goes, then select **😀** next to the name to search all emoji. |
-| Pick a color | Tap one of the 16 colors, or the rainbow swatch for any color from the device's color picker. On a light color, the text turns dark. |
+| Pick a color | Tap one of the 16 colors or a saved color. For any other color, tap the rainbow swatch, then tap or drag in the color field below it. On a light color, the text turns dark. |
+| Save a color | Pick it in the color field, then tap **Save this color**. It shows next to the 16 colors for everyone, up to 16 saved colors. To remove it, tap it, then **Remove this color**. A list that uses it keeps its color. |
 | Make a list a favorite | Open it, then tap **☆** next to **⋯**. The star fills gold (**★**), and the list moves to the **★ Favorites** section at the top of the page, with a small gold ★ on it. If you hide that section in the settings, the list stays in its own section, still with its ★. Tap **★** to undo. Each person has their own favorites. |
 | Change a list | Open it. Tap **⋯**, then **Edit list**. A new name also shows on the stock To-do page and to voice assistants. The entity ID stays the same. |
 | Hide a list | Tap **⋯**, then **Hide list**. It moves to **Hidden lists** at the bottom of the page, and stays in Home Assistant. To show it again, open it, then tap **⋯** and **Show list**. |
@@ -111,8 +112,8 @@ Tap the settings button at the top right of the Lists page. Each person keeps th
 
 Under **Backup** in the settings:
 
-- **Export** saves a JSON file with every list, item, color, and category, the order of the lists and categories, and each person's favorites and settings.
-- **Import** reads such a file. It adds the lists and items that are missing, matched by name, and takes the colors, categories, orders, favorites, and settings from the file. It never deletes or changes items that are already there. If Home Assistant does not create a list, for example because its name is too close to one it has, import skips that list, names it, and brings in the rest.
+- **Export** saves a JSON file with every list, item, color, and category, the order of the lists and categories, the saved colors, and each person's favorites and settings.
+- **Import** reads such a file. It adds the lists and items that are missing, matched by name, and takes the colors, categories, orders, favorites, and settings from the file. It adds the file's saved colors to the saved colors. It never deletes or changes items that are already there. If Home Assistant does not create a list, for example because its name is too close to one it has, import skips that list, names it, and brings in the rest.
 
 Use them to move the lists to another Home Assistant, or to keep a copy apart from Home Assistant backups.
 
@@ -124,6 +125,7 @@ Use them to move the lists to another Home Assistant, or to keep a copy apart fr
 | Color, category, and hidden state of each list | The app's `/data/looks.json`. Everyone sees the same. |
 | Categories and their order, also empty ones | The app's `/data/categories.json`. Everyone sees the same. |
 | Order of the lists | The app's `/data/order.json`. Everyone sees the same. |
+| Saved colors | The app's `/data/colors.json`. Everyone sees the same. |
 | Favorites, for each person | The app's `/data/favorites.json` |
 | Settings, for each person | The app's `/data/settings.json` |
 
