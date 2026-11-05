@@ -1247,8 +1247,19 @@ window.addEventListener("hashchange", () => {
   render();
   refresh();
 });
+
+// Home Assistant fades an app's page in (250 ms), and iOS WebKit can then show the page blank until a tap
+// makes it paint again. So the page paints itself again after the fade, a little later, and on each return.
+function repaint() {
+  document.body.style.opacity = "0.99";
+  requestAnimationFrame(() => requestAnimationFrame(() => { document.body.style.opacity = ""; }));
+}
+
+for (const delay of [400, 1500]) setTimeout(repaint, delay);
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) refresh();
+  if (document.hidden) return;
+  repaint();
+  refresh();
 });
 setInterval(() => {
   if (!document.hidden) refresh();

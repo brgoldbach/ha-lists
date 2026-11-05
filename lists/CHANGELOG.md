@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.3
+
+- In the Home Assistant iOS app, the page no longer stays blank until a tap.
+
 ## 1.1.2
 
 - Tap an item's circle to check it off. Tap its text to change it in place: Enter or a tap outside saves, and
